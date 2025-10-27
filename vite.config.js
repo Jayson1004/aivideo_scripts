@@ -8,6 +8,7 @@ export default defineConfig({
     host: true,
     port: 5173,
     hmr: false,
+    open: true,
     proxy: {
       '/v1beta': {
         target: 'http://yunwu.ai',
