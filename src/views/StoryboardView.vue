@@ -529,7 +529,7 @@ const generateImageForScene = async (sceneIndex) => {
   const scene = scenes.value[sceneIndex];
   if (!scene.prompt.trim()) {
     ElMessage.warning('请先输入提示词');
-    return;
+    return false;
   }
 
   let referenceImages = [];
@@ -562,12 +562,15 @@ const generateImageForScene = async (sceneIndex) => {
       }
       scenes.value[sceneIndex].images.push(url);
       ElMessage.success(`分镜 ${sceneIndex + 1} 图片生成成功`);
+      return true;
     } else {
       ElMessage.error(`分镜 ${sceneIndex + 1} 图片生成失败`);
+      return false;
     }
   } catch (e) {
     console.error(e);
     ElMessage.error(`分镜 ${sceneIndex + 1} 图片生成失败: ${e.message}`);
+    return false;
   } finally {
     imageLoading.value[sceneIndex] = false;
   }
@@ -575,7 +578,7 @@ const generateImageForScene = async (sceneIndex) => {
 
 const regenerateImageForScene = async (sceneIndex) => {
   scenes.value[sceneIndex].images = [];
-  await generateImageForScene(sceneIndex);
+  return await generateImageForScene(sceneIndex);
 }
 
 const generateAllImages = async () => {
@@ -592,26 +595,49 @@ const generateAllImages = async () => {
   ElMessage.info(`开始批量生成 ${scenesToGenerate.length} 张图片...`);
 
   const batchSize = 6;
-  let generatedCount = 0;
+  let failedScenes = [];
 
   try {
     for (let i = 0; i < scenesToGenerate.length; i += batchSize) {
       const batch = scenesToGenerate.slice(i, i + batchSize);
       ElMessage.info(`正在生成第 ${i + 1} 到 ${i + batch.length} 张图片...`);
       
-      const generationPromises = batch.map(item => 
-        generateImageForScene(item.index).then(() => {
-          generatedCount++;
-        })
-      );
+      const generationPromises = batch.map(async (item) => {
+        const success = await generateImageForScene(item.index);
+        if (!success) {
+          failedScenes.push(item);
+        }
+      });
       
       await Promise.all(generationPromises);
       if (scenesToGenerate.length > batchSize) {
-        ElMessage.success(`批次 ${Math.floor(i / batchSize) + 1} 已完成。目前已生成 ${generatedCount} / ${scenesToGenerate.length} 张。`);
+        ElMessage.success(`批次 ${Math.floor(i / batchSize) + 1} 已完成。`);
       }
     }
 
-    ElMessage.success('所有图片已生成完毕。');
+    let retryCount = 0;
+    while (failedScenes.length > 0 && retryCount < 3) {
+        retryCount++;
+        ElMessage.warning(`${failedScenes.length} 张图片生成失败，正在进行第 ${retryCount} 次重试...`);
+        
+        const currentFailures = [...failedScenes];
+        failedScenes = [];
+
+        const retryPromises = currentFailures.map(async (item) => {
+            const success = await regenerateImageForScene(item.index);
+            if (!success) {
+                failedScenes.push(item);
+            }
+        });
+        await Promise.all(retryPromises);
+    }
+
+    if (failedScenes.length > 0) {
+        ElMessage.error(`${failedScenes.length} 张图片经过3次重试后仍然生成失败。`);
+    } else {
+        ElMessage.success('所有图片已生成完毕。');
+    }
+
   } catch (e) {
     console.error(e);
     ElMessage.error(`批量生成过程中出现错误: ${e.message}`);
