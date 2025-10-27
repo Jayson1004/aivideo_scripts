@@ -302,7 +302,7 @@ const loadFromPromptGenerator = () => {
       const loadedScenes = JSON.parse(stored)
       if (Array.isArray(loadedScenes) && loadedScenes.length > 1) {
          loadedScenes.map((s,_idx) => {
-          if(_idx == 0) {
+          if(_idx == 0 && s.scene_index == 0) {
             // Assuming the first scene prompt describes characters
             // Format: CharacterName:Description;CharacterName2:Description2
             const characterStrings = s.prompt

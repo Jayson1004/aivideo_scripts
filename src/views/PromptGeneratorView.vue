@@ -29,7 +29,7 @@
       </template>
       <el-form :model="form" label-width="100px" style="max-width: 800px; margin:auto;">
         <el-form-item label="云雾API Key">
-          <el-input v-model="token" placeholder="API_KEY" style="width:400px" />
+          <el-input v-model="form.token" placeholder="API_KEY" style="width:400px" />
         </el-form-item>
         <el-form-item label="模型选择">
           <el-select v-model="form.model" placeholder="选择语言模型" style="width: 100%;">
@@ -246,7 +246,7 @@ const styleOptions = [
   { label: '低多边形', value: 'low poly style' },
   { label: '写实', value: 'photorealistic' },
 ]
-watch(token, (t) => {
+watch(form.value.token, (t) => {
     localStorage.setItem('apicore_token', t)
   
 })
@@ -1069,7 +1069,7 @@ const parseMarkdownJson = (md) => {
 
 // --- Lifecycle ---
 onMounted(() => {
-  token.value = localStorage.getItem('apicore_token') || ''
+  // form.value.token = localStorage.getItem('apicore_token') || ''
   loadHistory();
 });
 
