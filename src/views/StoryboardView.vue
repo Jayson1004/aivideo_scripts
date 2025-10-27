@@ -234,7 +234,8 @@ const storyTheme = ref('storyboard')
 const imageStyle = ref('') // Default to no style
 const styleOptions = ref([
   { label: '无风格', value: '' },
-  { label: '3D卡通', value: '3D cartoon style' },
+  { label: '3D卡通', value: 'Cartoon Games 3D' },
+  { label: '索尼影片', value: 'Sony Pictures Animation' },
   { label: '动漫', value: 'anime style' },
   { label: '像素艺术', value: 'pixel art style' },
   { label: '低多边形', value: 'low poly style' },

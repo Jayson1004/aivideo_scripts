@@ -106,7 +106,10 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="视频风格">
-          <el-input v-model="form.style" placeholder="例如：cinematic, anime, documentary, 3D cartoon" />
+          <!-- <el-input v-model="form.style" placeholder="例如：cinematic, anime, documentary, 3D cartoon" /> -->
+          <el-select v-model="form.style" placeholder="选择视频风格" style="width:160px;">
+            <el-option v-for="style in styleOptions" :key="style.value" :label="style.label" :value="style.value" />
+          </el-select>
         </el-form-item>
       </el-form>
       <div style="display:flex; gap:12px; justify-content: center; margin-top: 20px;">
@@ -234,6 +237,15 @@ const showHistoryDialog = ref(false)
 const savedStories = ref([])
 const currentStoryKey = ref(null)
 const token = ref('')
+const styleOptions = [
+{ label: '无风格', value: '' },
+  { label: '3D卡通', value: 'Cartoon Games 3D' },
+  { label: '索尼影片', value: 'Sony Pictures Animation' },
+  { label: '动漫', value: 'anime style' },
+  { label: '像素艺术', value: 'pixel art style' },
+  { label: '低多边形', value: 'low poly style' },
+  { label: '写实', value: 'photorealistic' },
+]
 watch(token, (t) => {
     localStorage.setItem('apicore_token', t)
   
@@ -242,7 +254,7 @@ watch(token, (t) => {
 function getInitialFormState() {
   return {
     topic: '',
-    style: 'cinematic',
+    style: 'photorealistic',
     language: 'chinese',
     story_type: '科幻',
     story_length: 800,
