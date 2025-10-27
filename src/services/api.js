@@ -165,10 +165,10 @@ export const ImagesAPI = {
             const response = await axios(config);
             let url = ''
             if(response.data.data[0].b64_json) {
-                if (returnBase64) {
+                // if (returnBase64) {
                     return `data:image/png;base64,${response.data.data[0].b64_json}`;
-                }
-              url = base64ToUrl(response.data.data[0].b64_json);
+              //   }
+              // url = base64ToUrl(response.data.data[0].b64_json);
             }else{
               url =response.data.data[0].url;
             } 

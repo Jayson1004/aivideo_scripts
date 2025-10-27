@@ -1069,6 +1069,7 @@ const parseMarkdownJson = (md) => {
 
 // --- Lifecycle ---
 onMounted(() => {
+  token.value = localStorage.getItem('apicore_token') || ''
   loadHistory();
 });
 
