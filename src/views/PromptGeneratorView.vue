@@ -696,7 +696,7 @@ const generateStory = async () => {
 
     // Auto-save the new story
     currentStoryKey.value = generateStoryKey();
-    const topic = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0] || '无主题故事';
+    const topic = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0] || currentStoryKey.value;
     const data = {
       topic: topic,
       generated_story_text: form.value.generated_story_text,
@@ -880,8 +880,25 @@ const generateStoryboardPrompts = async () => {
       ElMessage.success(`成功生成 ${scenes.length} 个分镜，请在弹窗中编辑确认。`);
       activeStep.value = 2;
 
-      // Update the story in localStorage with the new scenes
-      if (currentStoryKey.value) {
+      // If there's no current story key, it means the user pasted text.
+      // We need to create a new story record for them.
+      if (!currentStoryKey.value) {
+        currentStoryKey.value = generateStoryKey();
+        const topic = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0] || currentStoryKey.value;
+        const data = {
+          topic: topic,
+          generated_story_text: form.value.generated_story_text,
+          scenes: scenes, // Save the newly generated scenes
+          createdAt: new Date().toISOString(),
+          form: { ...form.value, topic: topic }
+        };
+        localStorage.setItem(currentStoryKey.value, JSON.stringify(data));
+        const index = getStoryIndex();
+        index.unshift(currentStoryKey.value);
+        saveStoryIndex(index);
+        loadHistory();
+      } else {
+        // Update the existing story in localStorage with the new scenes
         const existingData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');
         existingData.scenes = scenes;
         existingData.form = { ...form.value };
@@ -909,7 +926,24 @@ const savePromptsFromDialog = () => {
       activeStep.value = 2;
       ElMessage.success('分镜已保存!');
 
-      if (currentStoryKey.value) {
+      // If there's no current story key, create one.
+      if (!currentStoryKey.value) {
+        currentStoryKey.value = generateStoryKey();
+        const topic = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0] || currentStoryKey.value;
+        const data = {
+          topic: topic,
+          generated_story_text: form.value.generated_story_text,
+          scenes: scenes,
+          createdAt: new Date().toISOString(),
+          form: { ...form.value, topic: topic }
+        };
+        localStorage.setItem(currentStoryKey.value, JSON.stringify(data));
+        const index = getStoryIndex();
+        index.unshift(currentStoryKey.value);
+        saveStoryIndex(index);
+        loadHistory();
+      } else {
+        // Update existing story
         const existingData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');
         existingData.scenes = scenes;
         localStorage.setItem(currentStoryKey.value, JSON.stringify(existingData));
@@ -966,18 +1000,15 @@ const saveAndUseInStoryboard = () => {
 };
 
 const useInStoryboard = () => {
-  if (generatedScenes.value.length === 0) {
-    ElMessage.warning('没有可用的分镜。');
+  if (generatedScenes.value.length === 0 && !currentStoryKey.value) {
+    ElMessage.warning('没有可用的分镜，请先生成或加载一个故事。');
     return;
   }
-  const storyboardScenes = generatedScenes.value.map(scene => ({
-    prompt: scene.image_prompt,
-    narration: scene.narration,
-    video_promt: scene.video_promt
-  }));
-  localStorage.setItem('storyboard_scenes', JSON.stringify(storyboardScenes));
+  // Pass the key and a flag to indicate navigation from the generator.
+  // StoryboardView will be responsible for loading the scenes from the story record.
   localStorage.setItem('story_theme', form.value.topic || 'untitled_story');
-  localStorage.setItem('current_story_key', currentStoryKey.value); // Pass the key
+  localStorage.setItem('current_story_key', currentStoryKey.value);
+  localStorage.setItem('from_prompt_generator', 'true');
   router.push('/storyboard');
 };
 

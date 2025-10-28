@@ -140,7 +140,7 @@
         </el-table-column>
         <el-table-column label="提示词" min-width="300">
           <template #default="{ row }">
-            <el-input v-model="row.prompt" type="textarea" :rows="5" placeholder="请输入图片生成提示词..." />
+            <el-input v-model="row.image_prompt" type="textarea" :rows="5" placeholder="请输入图片生成提示词..." />
           </template>
         </el-table-column>
         <el-table-column label="生成的图片">
@@ -205,7 +205,7 @@
         </el-table-column>
         <el-table-column label="操作" width="120" align="center">
           <template #default="{ row }">
-            <el-button size="small" @click="loadStory(row.key)">加载</el-button>
+            <el-button size="small" @click="loadStory(row.key, true)">加载</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -224,7 +224,7 @@ import { Download, Delete, Plus, ZoomIn } from '@element-plus/icons-vue'
 const router = useRouter()
 const goBack = () => router.push('/prompt-generator');
 const scenes = ref([
-  { prompt: '', narration: '',video_promt: '', images: [] }
+  { image_prompt: '', narration: '',video_promt: '', images: [] }
 ])
 const provider = ref('gpt-image-1-all')
 const token = ref('')
@@ -258,6 +258,8 @@ const savedStories = ref([])
 const globalBaseImages = ref([]) // { uid, name, url, raw }
 const enableBaseImage = ref(true) // New ref for the toggle switch
 const characterImageLoading = ref({}) // New ref to track loading state for character images
+const currentStoryKey = ref(null)
+const peoples = ref([])
 
 watch([provider, token], ([p, t]) => {
   if (p === 'gemini-imagen') {
@@ -273,9 +275,15 @@ watch([provider, token], ([p, t]) => {
   }
 })
 
-watch(scenes, (newScenes) => {
+watch([scenes, peoples], ([newScenes, newPeoples]) => {
+  const stateToSave = {
+    scenes: newScenes,
+    peoples: newPeoples,
+    currentStoryKey: currentStoryKey.value
+  };
   try {
-    localStorage.setItem('storyboard_state', JSON.stringify(newScenes));
+    // Save temporary state for page reloads
+    localStorage.setItem('storyboard_state', JSON.stringify(stateToSave));
   } catch (error) {
     if (error.name === 'QuotaExceededError') {
       ElMessage.error('本地存储空间不足，无法保存当前状态。');
@@ -283,29 +291,59 @@ watch(scenes, (newScenes) => {
       console.error('保存状态失败:', error);
     }
   }
+
+  // Save back to the main story record for history
+  if (currentStoryKey.value) {
+    try {
+      const storyDataJSON = localStorage.getItem(currentStoryKey.value);
+      if (storyDataJSON) {
+        const storyData = JSON.parse(storyDataJSON);
+        
+        let scenesToSave = newScenes.map(s => ({
+          image_prompt: s.image_prompt,
+          narration: s.narration,
+          video_promt: s.video_promt,
+        }));
+
+        if (newPeoples.length > 0) {
+            const characterScene = {
+                image_prompt: newPeoples.map(p => `${p.name}:${p.description}`),
+                narration: '',
+                video_promt: ''
+            };
+            scenesToSave.unshift(characterScene);
+        }
+        
+        storyData.scenes = scenesToSave;
+        localStorage.setItem(currentStoryKey.value, JSON.stringify(storyData));
+      }
+    } catch (error) {
+      console.error('无法更新历史记录:', error);
+    }
+  }
 }, { deep: true });
 
-const add = ()=> scenes.value.push({ prompt: '', narration: '',video_promt: '', images: [] })
+const add = ()=> scenes.value.push({ image_prompt: '', narration: '',video_promt: '', images: [] })
 const remove = (idx)=> scenes.value.splice(idx,1)
 
 const clearAll = () => {
-  scenes.value = [{ prompt: '', narration: '',video_promt: '', images: [] }]
+  scenes.value = [{ image_prompt: '', narration: '',video_promt: '', images: [] }]
+  peoples.value = []
   ElMessage.success('已清空所有分镜')
 }
-
-const peoples = ref([])
 const loadFromPromptGenerator = () => {
   try {
     const stored = localStorage.getItem('storyboard_scenes')
     scenes.value = []
+    peoples.value = []
     if (stored) {
       const loadedScenes = JSON.parse(stored)
       if (Array.isArray(loadedScenes) && loadedScenes.length > 1) {
          loadedScenes.map((s,_idx) => {
-          if(_idx == 0 && s.scene_index == 0) {
+          if(_idx == 0 && Array.isArray(s.image_prompt)) {
             // Assuming the first scene prompt describes characters
             // Format: CharacterName:Description;CharacterName2:Description2
-            const characterStrings = s.prompt
+            const characterStrings = s.image_prompt
             peoples.value = characterStrings.map(str => {
               const [name, description] = str.split(':');
               return { name: name.trim(), description: description ? description.trim() : name.trim() + ' profile image' };
@@ -315,11 +353,11 @@ const loadFromPromptGenerator = () => {
           }
          });
         ElMessage.success(`已加载 ${loadedScenes.length} 个分镜`)
-        // localStorage.removeItem('storyboard_scenes')
+        localStorage.removeItem('storyboard_scenes')
       } else if (Array.isArray(loadedScenes) && loadedScenes.length === 1) {
         // If only one scene, assume it's character prompt
         const s = loadedScenes[0];
-        const characterStrings = s.prompt.split(';').filter(str => str.trim() !== '');
+        const characterStrings = s.image_prompt.split(';').filter(str => str.trim() !== '');
           peoples.value = characterStrings.map(str => {
             const [name, description] = str.split(':');
             return { name: name.trim(), description: description ? description.trim() : name.trim() + ' profile image' };
@@ -347,17 +385,58 @@ const loadHistory = () => {
   }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 };
 
-const loadStory = (key) => {
+const loadStory = (key, closeDialog = true) => {
   const data = JSON.parse(localStorage.getItem(key) || '{}');
-  if (data.scenes && Array.isArray(data.scenes) && data.scenes.length > 0) {
-    scenes.value = data.scenes.map(s => ({
-      prompt: s.image_prompt || '',
-      narration: s.narration || '',
-      video_promt:s.video_promt || '',
-      images: [],
-    }));
+  if (data.scenes && Array.isArray(data.scenes)) {
+    scenes.value = [];
+    peoples.value = [];
+    const loadedScenes = data.scenes;
+
+    if (loadedScenes.length > 0) {
+        const firstScene = loadedScenes[0];
+        let isCharacterScene = false;
+
+        // Check if it's a character scene (either as array or corrupted string)
+        if (Array.isArray(firstScene.image_prompt)) {
+            isCharacterScene = true;
+        } else if (typeof firstScene.image_prompt === 'string' && firstScene.image_prompt.includes(':') && !firstScene.narration && !firstScene.video_promt) {
+            isCharacterScene = true;
+        }
+
+        if (isCharacterScene) {
+            const characterStrings = Array.isArray(firstScene.image_prompt) 
+                ? firstScene.image_prompt 
+                : firstScene.image_prompt.split(',');
+
+            peoples.value = characterStrings.map(str => {
+                const [name, ...descParts] = str.split(':');
+                const description = descParts.join(':').trim();
+                return { name: name.trim(), description: description || name.trim() + ' profile image' };
+            });
+
+            // The rest of the scenes
+            scenes.value = loadedScenes.slice(1).map(s => ({
+                image_prompt: s.image_prompt || '',
+                narration: s.narration || '',
+                video_promt: s.video_promt || '',
+                images: [],
+            }));
+        } else {
+            // No character scene found, treat all as normal scenes
+            scenes.value = loadedScenes.map(s => ({
+                image_prompt: s.image_prompt || '',
+                narration: s.narration || '',
+                video_promt: s.video_promt || '',
+                images: [],
+            }));
+        }
+    }
+
     storyTheme.value = data.topic || 'storyboard';
-    showHistoryDialog.value = false;
+    currentStoryKey.value = key;
+    if (closeDialog) {
+      showHistoryDialog.value = false;
+    }
     ElMessage.success(`已加载分镜: ${data.topic}`);
   } else {
     ElMessage.warning('此历史记录中没有可用的分镜数据。');
@@ -498,7 +577,7 @@ const exportTexts = () => {
   let textToExport = '';
   scenes.value.forEach((scene, index) => {
     textToExport += `## 分镜 ${index + 1}\n\n`;
-    textToExport += `**提示词:**\n${scene.prompt}\n\n`;
+    textToExport += `**提示词:**\n${scene.image_prompt}\n\n`;
     textToExport += `**旁白:**\n${scene.narration || '无'}\n\n`;
     textToExport += `**视频镜头提示词:**\n${scene.video_promt || '无'}\n\n`;
     
@@ -528,7 +607,7 @@ const exportTexts = () => {
 
 const generateImageForScene = async (sceneIndex) => {
   const scene = scenes.value[sceneIndex];
-  if (!scene.prompt.trim()) {
+  if (!scene.image_prompt.trim()) {
     ElMessage.warning('请先输入提示词');
     return false;
   }
@@ -537,7 +616,7 @@ const generateImageForScene = async (sceneIndex) => {
   if (enableBaseImage.value) {
     // Find matching base images only if enabled
     referenceImages = globalBaseImages.value
-      .filter(img => scene.prompt.includes(img.name))
+      .filter(img => scene.image_prompt.includes(img.name))
       .map(img => ({ name: img.name, url: img.url }));
 
     if (referenceImages.length > 0) {
@@ -548,7 +627,7 @@ const generateImageForScene = async (sceneIndex) => {
   
   imageLoading.value[sceneIndex] = true;
   try {
-    const finalPrompt = imageStyle.value ? `${scene.prompt} ${imageStyle.value}` : scene.prompt;
+    const finalPrompt = imageStyle.value ? `${scene.image_prompt} ${imageStyle.value}` : scene.image_prompt;
     let url = ''
     if(provider.value.includes('dall-e-') || provider.value.includes('gpt-')) {
       url = await ImagesAPI.apicoreGenerateOne(finalPrompt, token.value, provider.value, aspectRatio.value, imageSize.value, referenceImages, image_style.value, image_quality.value);
@@ -585,7 +664,7 @@ const regenerateImageForScene = async (sceneIndex) => {
 const generateAllImages = async () => {
   const scenesToGenerate = scenes.value
     .map((s, i) => ({ scene: s, index: i }))
-    .filter(item => item.scene.prompt.trim() && (!item.scene.images || item.scene.images.length === 0));
+    .filter(item => item.scene.image_prompt.trim() && (!item.scene.images || item.scene.images.length === 0));
 
   if (scenesToGenerate.length === 0) {
     ElMessage.warning('所有分镜都已有图片，或没有输入提示词。');
@@ -656,19 +735,64 @@ onMounted(() => {
   storyTheme.value = localStorage.getItem('story_theme') || 'storyboard';
   loadHistory();
 
-  // const savedState = localStorage.getItem('storyboard_state');
-  if (localStorage.getItem('storyboard_scenes')) {
-    ElMessage.info('检测到上一个页面的分镜数据，正在为您加载...')
-    loadFromPromptGenerator()
-  } 
-  // else if (savedState) {
-  //   const parsedState = JSON.parse(savedState);
-  //   if (Array.isArray(parsedState) && parsedState.length > 0) {
-  //     scenes.value = parsedState.map(s => ({ ...s, images: [], baseimg: s.baseimg || null }));
-  //     ElMessage.success('已恢复上次的编辑状态');
-  //   }
-  // }
-})
+  const fromGenerator = localStorage.getItem('from_prompt_generator');
+  const incomingStoryKey = localStorage.getItem('current_story_key');
+
+  if (fromGenerator === 'true') {
+    localStorage.removeItem('from_prompt_generator');
+    const savedStateJSON = localStorage.getItem('storyboard_state');
+    let stateLoaded = false;
+    if (savedStateJSON) {
+        try {
+            const savedState = JSON.parse(savedStateJSON);
+            // If the state we have saved belongs to the story we're coming from, load it
+            if (savedState.currentStoryKey === incomingStoryKey) {
+                scenes.value = savedState.scenes;
+                if (savedState.peoples && Array.isArray(savedState.peoples)) {
+                  peoples.value = savedState.peoples;
+                }
+                currentStoryKey.value = savedState.currentStoryKey;
+                ElMessage.success('已恢复您对该故事的编辑');
+                stateLoaded = true;
+            }
+        } catch (e) {
+            console.error("解析 storyboard_state 失败", e);
+        }
+    }
+
+    // If we didn't load a previous state (either it didn't exist or was for a different story)
+    if (!stateLoaded) {
+        if (incomingStoryKey) {
+            ElMessage.info('加载新故事分镜...');
+            loadStory(incomingStoryKey, false); // This loads the base scenes
+            currentStoryKey.value = incomingStoryKey;
+        } else {
+            // This case should ideally not happen if the generator works correctly
+            scenes.value = [{ image_prompt: '', narration: '',video_promt: '', images: [] }];
+            currentStoryKey.value = null;
+        }
+    }
+  } else {
+    // This is a normal page refresh, not a navigation from the generator
+    const savedStateJSON = localStorage.getItem('storyboard_state');
+    if (savedStateJSON) {
+      try {
+        const savedState = JSON.parse(savedStateJSON);
+        if (savedState.scenes && Array.isArray(savedState.scenes)) {
+          scenes.value = savedState.scenes;
+          if (savedState.peoples && Array.isArray(savedState.peoples)) {
+            peoples.value = savedState.peoples;
+          }
+          currentStoryKey.value = savedState.currentStoryKey;
+          ElMessage.success('已恢复上次的编辑状态');
+        }
+      } catch (e) {
+        console.error("解析 storyboard_state 失败", e);
+        localStorage.removeItem('storyboard_state'); // Clear corrupted state
+      }
+    }
+  }
+});
 
 </script>
 
