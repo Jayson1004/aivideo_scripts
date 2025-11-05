@@ -45,6 +45,7 @@
             
           </el-select>
         </el-form-item>
+       
         <el-form-item label="故事来源">
           <el-radio-group v-model="form.generate_story_type" @change="activeStep = 0">
             <el-radio label="1">根据主题生成</el-radio>
@@ -93,6 +94,7 @@
         <span>第2步：生成分镜提示词</span>
       </template>
       <el-form :model="form" label-width="120px" style="max-width: 800px; margin:auto;">
+
         <el-form-item label="生成分镜提示词">
           <el-button @click="showTxtToScene = true">编辑提示词</el-button>
         </el-form-item>
@@ -117,21 +119,23 @@
       </div>
     </el-card>
     <!-- 编辑生成分镜提示词 -->
-    <el-dialog v-model="showTxtToScene" title="编辑生成分镜提示词" width="80%" top="5vh">
-      <p style="margin-bottom: 10px; color: #666;">您可以在下方文本框中直接编辑提示词。</p>
-      <el-input 
-        v-model="txt_to_img_prompt" 
-        type="textarea" 
-        :rows="20"
-      />
-      <template #footer>
-        <el-button @click="showTxtToScene = false">取消</el-button>
-        <el-button type="success" @click="showTxtToScene = false">保存并用于生成分镜提示词</el-button>
-      </template>
-    </el-dialog>
+      <el-dialog v-model="showTxtToScene" title="编辑生成分镜提示词" width="80%" top="5vh">
+        
+        <p style="margin-bottom: 10px; color: #666;">您可以在下方文本框中直接编辑提示词。</p>
+        <el-input 
+          v-model="txt_to_img_prompt" 
+          type="textarea" 
+          :rows="20"
+        />
+        <template #footer>
+          <el-button @click="showTxtToScene = false">取消</el-button>
+          <el-button type="success" @click="showTxtToScene = false">保存并用于生成分镜提示词</el-button>
+        </template>
+      </el-dialog>
 
     <!-- Result Dialog -->
     <el-dialog v-model="showResultDialog" title="编辑分镜提示词" width="80%" top="5vh">
+      <el-input v-model="script_topic" placeholder="脚本主题,例如：复刻k-pop故事视频" />
       <p style="margin-bottom: 10px; color: #666;">您可以在下方文本框中直接编辑生成的JSON格式的分镜提示词。</p>
       <el-input 
         v-model="editableJsonString" 
@@ -169,60 +173,8 @@ import { ref, onMounted,watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
-// import { PromptAPI } from '../services/api'
-const PromptAPI = {
-  apicoreGenerateTxt: async (prompt, token, model) => {
-    if (!token) throw new Error('API token is required');
+import { PromptAPI, FileAPI } from '../services/api';
 
-    let url = '';
-    let payload = {};
-    const headers = {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    };
-
-    if (model.includes('gpt')) {
-      url = '/v1/responses';
-      payload = {
-        "model": model,
-        "input": [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}],
-        "tools": [],
-        "text": {"format": {"type": "text"}, "verbosity": "medium"},
-        "reasoning": {"effort": "medium", "summary": 'auto'},
-        "stream": false,
-        "store": false
-      };
-    } else if (model.includes('claude')) {
-      url = `/v1/messages`;
-      payload = {
-        model: model,
-        system: "你是一个智能AI助手。",
-        messages: [{ role: "user", content: prompt }],
-        stream: false,
-        max_tokens: 8000,
-        thinking: { type: "enabled", budget_tokens: 5200 }
-      };
-    } else {
-        throw new Error(`Unsupported model: ${model}`);
-    }
-    let result = ''
-    const response = await axios.post(url, payload, { headers });
-    if(model.includes('claude')){
-      if (response.data?.content[0]) {
-        result = response.data?.content[0].text;
-      }
-    } else if(model.includes('gpt')) {
-      const output = response.data.output
-      output.map(el=>{
-        if(el.type == "message" && el.content[0].type == "output_text") {
-          result = el.content[0].text
-        }
-      })
-    }
-    return result;
-  }
-};
 const router = useRouter()
 
 // State
@@ -236,7 +188,6 @@ const editableJsonString = ref('')
 const showHistoryDialog = ref(false)
 const savedStories = ref([])
 const currentStoryKey = ref(null)
-const token = ref('')
 const styleOptions = [
 { label: '无风格', value: '' },
   { label: '3D卡通', value: 'Cartoon Games 3D' },
@@ -245,10 +196,11 @@ const styleOptions = [
   { label: '像素艺术', value: 'pixel art style' },
   { label: '低多边形', value: 'low poly style' },
   { label: '写实', value: 'photorealistic' },
+  { label: 'Roblox像素风', value: 'Roblox pixel' },
 ]
-watch(form.value.token, (t) => {
-    localStorage.setItem('apicore_token', t)
-  
+const script_topic = ref('')
+watch(() => form.value.token, (t) => {
+  localStorage.setItem('apicore_token', t);
 })
 // --- Helper Functions ---
 function getInitialFormState() {
@@ -719,7 +671,7 @@ const generateStory = async () => {
 };
 const txt_to_img_prompt = ref(`角色：Sora级影视分镜导演与连续性剪辑师 
 
-      你的身份是一个具备双重能力的专家。在任务开始时，你是一个分镜导演，负责从无到有地创造一个完整的分镜脚本。在我（用户）确认初稿完成后，你的角色将无缝切换为连续性剪辑师，负责对脚本进行精准的、上下文感知的修正与补充。
+      你的身份是一个具备双重能力的专家。在任务开始时，你是一个分镜导演，负责从无到有地创造一个完整的分镜脚本。你的角色将无缝切换为连续性剪辑师，负责对脚本进行精准的、上下文感知的修正与补充。
       [!] 全局工作流程：两阶段执行协议 (Global Workflow: Two-Phase Execution Protocol)
 
       你必须严格按照以下阶段来执行任务。
@@ -780,7 +732,7 @@ const txt_to_img_prompt = ref(`角色：Sora级影视分镜导演与连续性剪
 
           e. 路人处理: 任何无法识别或不重要的背景角色（路人），一律使用“一个路人”、“几个穿制服的警察”等泛指称呼。
 
-          f. 为了保证“物品一致性”,，应写出：
+          f. 你必须通读并完全沉浸在用户提供的完整故事文本中，每个分镜中的物品必须符合故事文本中的描述，必须保证“物品一致性”,确保同一个物品描述一致，每个分镜应写出：
             1️⃣ 基本信息
             类别：如“红色电动车”“陶瓷茶壶”“木制椅子”
             大小 / 比例：如“小巧手持型”“大型座驾”
@@ -823,38 +775,73 @@ const txt_to_img_prompt = ref(`角色：Sora级影视分镜导演与连续性剪
       [色彩]：写实色调，自然色彩，准确的白平衡，不过度饱和。
       [画质]：8K分辨率视觉效果，高度细腻，细节丰富，无噪点。
 
-    基于各个分镜的角色和动作，再提供一个生成视频的提示词video_promt，不需要对主体、环境、时间、天气、视角、景别进行分类，只需要用一句话描述镜头内容，必须包含运镜（比如镜头推进、镜头环绕、镜头跟随、手持镜头等，需要符合画面剧情）、人物和动作，不要有多余的氛围描述
+
+    # 角色：AI戏剧导演与视觉动态叙事专家
+
+    你是一位精通镜头语言和情感表达的戏剧导演。你的使命是将静态的分镜脚本，转化为一系列情感饱满、动作连贯、信息密度极高的图生视频提示词。你善于捕捉并放大故事中的冲突与情感，创造出极具张力的视觉体验。
+
+    你的工作流程严格遵循以下两个阶段：
+
+    **第一阶段：沉浸式故事理解 (Immersive Story Comprehension)**
+    在动笔之前，你必须通读并完全沉浸在用户提供的完整分镜脚本中。你需要在脑海中构建整个故事世界，清晰地把握：
+    1.  **故事核心与情感流 (Narrative Core & Emotional Flow):** 故事的主线是什么？角色的情感是如何从一个镜头流向下一个镜头的？
+    2.  **关键转折点 (Key Turning Points):** 哪些是情节或情绪发生剧烈变化的关键镜头？你将在这里注入最大的戏剧张力。
+
+    **第二阶段：逐镜递进式动态生成 (Progressive & Dynamic Shot Generation)**
+    完成全局理解后，你将以前后关联的思维，逐一为每个分镜创作视频提示词。
+
+    **生成的核心准则：**
+
+    1.  ** 镜头语言约束 (Camera Language Constraint):** '运镜方式'的描述**必须**从以下**精确的、带方向的原子指令**中选择一个最合适的，严禁使用任何列表之外的模糊指令。
+        *   '固定镜头'
+        *   '跟随镜头'
+        *   '镜头推进'
+        *   '镜头拉远'
+        *   '环绕镜头'
+        *   '镜头上移'
+        *   '镜头下移'
+        *   '镜头左移'
+        *   '镜头右移'
+
+    2.  **【强制】上下文继承与衔接 (Context Inheritance & Bridging):** 在为**当前镜头**生成提示词时，你必须首先回顾**上一个镜头**的内容和生成的动作。确保你的新提示词是上一个动作的自然延续或合乎逻辑的反应，**绝不允许出现动作或情绪的断层**,不用出现'承接',''上一个镜头'之类的词。
+
+    3.  **【强制】信息密度最大化 (Maximize Information Density):** 将单个静态动作扩展为一个包含**“起始-发展-结束”**的微型动态序列。让动作和表情有一个清晰的变化过程。
+        *   **示例 (弱):** “两个人在亲吻”
+        *   **示例 (强):** “两人正在深情亲吻，亲吻结束后缓缓分开，男孩脸颊泛红，女孩则害羞地低下头，两人相视一笑。”
+
+    4.  **【强制】戏剧化张力增强 (Amplify Dramatic Tension):** 当分镜内容涉及冲突、追逐、恐惧、喜悦等强烈情绪时，你必须使用更激烈、更具表现力的词汇来描述动作、表情和环境，以极限放大画面的戏剧张力。
+        *   **示例 (弱):** “老虎在后面追赶，他在逃跑”
+        *   **示例 (强):** “一只斑斓猛虎在他身后张着血盆大口疯狂追赶，唾液飞溅，他则满脸惊恐，用尽全身力气不顾一切地向前狂奔，手臂剧烈摆动。”
+
+    5.  **【格式】简洁与专注 (Concise & Focused):** 提示词应只包含对镜头内容的一句话描述，必须包含从上述列表中选择的**运镜**、**人物**和**动作**。禁止添加多余的氛围或风格描述。
+
+     生成每个分镜的图生视频提示词video_promt
+
 
     
-      # 绝对输出格式
-      必须严格返回一个JSON数组，不要包含任何Markdown标记或解释性文字。
-
-      [
+      # 最终绝对输出格式
+      必须严格返回一个JSON，不要包含任何Markdown标记或解释性文字。characters一个放所有角色描述的数组,scenes一个放所有分镜描述的数组
+   
+      {
+        characters: [
           {
-              "scene_index": 1,
-              "image_prompt": "<详细的图像描述，包含场景、人物、动作、氛围，需要符合画面剧情>",
-              "narration": "<这一幕的旁白文本>",
-              "video_promt": "<视频提示词，包括运镜（比如镜头推进、镜头环绕、镜头跟随、手持镜头等，需要符合画面剧情）、人物和动作>",
-              "duration_estimate": 5.5
+            "name": "角色1名字",
+            "description": "角色1描述"
           },
           ...
-      ]
-      生成的所有主要角色，带有人物特征描述的，放到上面json数组的第一个，即scene_index为0,里面的image_prompt是一个放所有角色描述的数组。
-      例如：
-      [
-          {
-              "scene_index": 0,
-              "image_prompt": [
-                "角色1名字:精瘦老年男性，典型的泰国北部老人面容，皮肤黝黑...",
-                "角色2名字:都市白领女性, 东亚面孔，黑色长发，常见于中国上海的年轻职业女性...",
-                "角色3名字:..."
-              ],
-              "narration": "",
-              "video_promt": "",
-              "duration_estimate": 0
-          },
-          ...
-      ]
+        ],
+        scenes: [
+            {
+                "scene_index": 1,
+                "image_prompt": "<详细的图像描述，包含场景、人物、动作、氛围，需要符合画面剧情>",
+                "narration": "<这一幕的旁白文本>",
+                "video_promt": "<视频提示词，包括运镜（比如镜头推进、镜头环绕、镜头跟随、手持镜头等，需要符合画面剧情）、人物和动作>",
+                "duration_estimate": 5.5
+            },
+            ...
+        ]
+      }
+      
 
       不改编。`)
 const generateStoryboardPrompts = async () => {
@@ -867,17 +854,17 @@ const generateStoryboardPrompts = async () => {
   activeStep.value = 1;
 
   try {
-    const prompt = `你的身份是分镜导演。你的任务是分析原故事文本 ${form.value.generated_story_text}， 用语言: ${form.value.language} 一份完整、连贯、格式正确的分镜脚本。
+    const prompt = `你的身份是分镜导演。你的任务是分析原故事文本 ${form.value.generated_story_text}， 用语言: ${form.value.language}生成 一份${form.value.style}风格完整、连贯、格式正确的分镜脚本。
    ${txt_to_img_prompt.value}`;
     const result = await PromptAPI.apicoreGenerateTxt(prompt, form.value.token, form.value.model);
     
-    const scenes = parseMarkdownJson(result);
+    const storyboardData = parseMarkdownJson(result);
 
-    if (scenes && Array.isArray(scenes)) {
-      editableJsonString.value = JSON.stringify(scenes, null, 2);
-      generatedScenes.value = scenes;
+    if (storyboardData && storyboardData.scenes && Array.isArray(storyboardData.scenes)) {
+      editableJsonString.value = JSON.stringify(storyboardData, null, 2);
+      generatedScenes.value = storyboardData.scenes;
       showResultDialog.value = true;
-      ElMessage.success(`成功生成 ${scenes.length} 个分镜，请在弹窗中编辑确认。`);
+      ElMessage.success(`成功生成 ${storyboardData.scenes.length} 个分镜，请在弹窗中编辑确认。`);
       activeStep.value = 2;
 
       // If there's no current story key, it means the user pasted text.
@@ -888,7 +875,8 @@ const generateStoryboardPrompts = async () => {
         const data = {
           topic: topic,
           generated_story_text: form.value.generated_story_text,
-          scenes: scenes, // Save the newly generated scenes
+          characters: storyboardData.characters || [],
+          scenes: storyboardData.scenes,
           createdAt: new Date().toISOString(),
           form: { ...form.value, topic: topic }
         };
@@ -900,14 +888,15 @@ const generateStoryboardPrompts = async () => {
       } else {
         // Update the existing story in localStorage with the new scenes
         const existingData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');
-        existingData.scenes = scenes;
+        existingData.characters = storyboardData.characters || [];
+        existingData.scenes = storyboardData.scenes;
         existingData.form = { ...form.value };
         localStorage.setItem(currentStoryKey.value, JSON.stringify(existingData));
         loadHistory();
       }
 
     } else {
-      ElMessage.error('生成分镜失败：无法解析返回的数据。');
+      ElMessage.error('生成分镜失败：无法解析返回的数据，或数据格式不正确。');
     }
   } catch (error) {
     console.error('生成分镜提示词失败:', error);
@@ -919,9 +908,9 @@ const generateStoryboardPrompts = async () => {
 
 const savePromptsFromDialog = () => {
   try {
-    const scenes = JSON.parse(editableJsonString.value);
-    if (scenes && Array.isArray(scenes)) {
-      generatedScenes.value = scenes;
+    const storyboardData = JSON.parse(editableJsonString.value);
+    if (storyboardData && storyboardData.scenes && Array.isArray(storyboardData.scenes)) {
+      generatedScenes.value = storyboardData.scenes;
       showResultDialog.value = false;
       activeStep.value = 2;
       ElMessage.success('分镜已保存!');
@@ -933,7 +922,8 @@ const savePromptsFromDialog = () => {
         const data = {
           topic: topic,
           generated_story_text: form.value.generated_story_text,
-          scenes: scenes,
+          characters: storyboardData.characters || [],
+          scenes: storyboardData.scenes,
           createdAt: new Date().toISOString(),
           form: { ...form.value, topic: topic }
         };
@@ -945,13 +935,14 @@ const savePromptsFromDialog = () => {
       } else {
         // Update existing story
         const existingData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');
-        existingData.scenes = scenes;
+        existingData.characters = storyboardData.characters || [];
+        existingData.scenes = storyboardData.scenes;
         localStorage.setItem(currentStoryKey.value, JSON.stringify(existingData));
         loadHistory();
       }
       return true;
     } else {
-      ElMessage.error('保存失败：格式不是一个有效的场景数组。');
+      ElMessage.error('保存失败：格式不是一个有效的场景对象（需要包含scenes数组）。');
       return false;
     }
   } catch (error) {
@@ -993,20 +984,35 @@ const exportScript = () => {
   URL.revokeObjectURL(a.href);
 };
 
-const saveAndUseInStoryboard = () => {
+const saveAndUseInStoryboard = async () => {
   if (savePromptsFromDialog()) {
-    useInStoryboard();
+    try {
+      if (!script_topic.value.trim()) {
+        ElMessage.warning('保存失败，请输入脚本主题。');
+        return;
+      }
+      await FileAPI.saveText(script_topic.value, 'prompts.txt', editableJsonString.value);
+      ElMessage.success('分镜提示词已保存到服务器。');
+      useInStoryboard();
+    } catch (error) {
+      console.error('保存提示词文件失败:', error);
+      ElMessage.error('保存提示词文件到服务器失败。');
+    }
   }
 };
 
 const useInStoryboard = () => {
+  if (!script_topic.value.trim()) {
+    ElMessage.warning('请输入脚本主题');
+    return;
+  }
   if (generatedScenes.value.length === 0 && !currentStoryKey.value) {
     ElMessage.warning('没有可用的分镜，请先生成或加载一个故事。');
     return;
   }
   // Pass the key and a flag to indicate navigation from the generator.
   // StoryboardView will be responsible for loading the scenes from the story record.
-  localStorage.setItem('story_theme', form.value.topic || 'untitled_story');
+  localStorage.setItem('script_topic', script_topic.value || 'untitled_story');
   localStorage.setItem('current_story_key', currentStoryKey.value);
   localStorage.setItem('from_prompt_generator', 'true');
   router.push('/storyboard');

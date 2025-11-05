@@ -218,7 +218,7 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ImagesAPI } from '../services/api'
+import { ImagesAPI, FileAPI } from '../services/api'
 import { Download, Delete, Plus, ZoomIn } from '@element-plus/icons-vue'
 
 const router = useRouter()
@@ -228,8 +228,8 @@ const scenes = ref([
 ])
 const provider = ref('gpt-image-1-all')
 const token = ref('')
-const imageSize = ref('1792x1024')
-const aspectRatio = ref('16:9')
+const imageSize = ref('1024x1792')
+const aspectRatio = ref('9:16')
 const storyTheme = ref('storyboard')
 const imageStyle = ref('') // Default to no style
 const styleOptions = ref([
@@ -240,6 +240,7 @@ const styleOptions = ref([
   { label: '像素艺术', value: 'pixel art style' },
   { label: '低多边形', value: 'low poly style' },
   { label: '写实', value: 'photorealistic' },
+  { label: 'Roblox像素风', value: 'Roblox pixel' },
 ])
 
 const image_style = ref('natural')
@@ -262,66 +263,61 @@ const currentStoryKey = ref(null)
 const peoples = ref([])
 
 watch([provider, token], ([p, t]) => {
-  if (p === 'gemini-imagen') {
-    localStorage.setItem('gemini_api_key', t)
-   aspectRatio.value = '16:9'
-  } else {
-    if(p == 'dall-e-3') {
-      imageSize.value = '1792x1024'
-    } else {
-      imageSize.value = '1536x1024'
-    }
-    localStorage.setItem('apicore_token', t)
-  }
+ if (p === 'gemini-imagen') {
+   localStorage.setItem('gemini_api_key', t)
+  aspectRatio.value = '16:9'
+ } else {
+   if(p == 'dall-e-3') {
+     imageSize.value = '1024x1792'
+   } else {
+     imageSize.value = '1024x1536'
+   }
+   localStorage.setItem('apicore_token', t)
+ }
 })
 
-watch([scenes, peoples], ([newScenes, newPeoples]) => {
-  const stateToSave = {
-    scenes: newScenes,
-    peoples: newPeoples,
-    currentStoryKey: currentStoryKey.value
-  };
-  try {
-    // Save temporary state for page reloads
-    localStorage.setItem('storyboard_state', JSON.stringify(stateToSave));
-  } catch (error) {
-    if (error.name === 'QuotaExceededError') {
-      ElMessage.error('本地存储空间不足，无法保存当前状态。');
-    } else {
-      console.error('保存状态失败:', error);
-    }
-  }
-
-  // Save back to the main story record for history
-  if (currentStoryKey.value) {
-    try {
-      const storyDataJSON = localStorage.getItem(currentStoryKey.value);
-      if (storyDataJSON) {
-        const storyData = JSON.parse(storyDataJSON);
-        
-        let scenesToSave = newScenes.map(s => ({
-          image_prompt: s.image_prompt,
-          narration: s.narration,
-          video_promt: s.video_promt,
-        }));
-
-        if (newPeoples.length > 0) {
-            const characterScene = {
-                image_prompt: newPeoples.map(p => `${p.name}:${p.description}`),
-                narration: '',
-                video_promt: ''
-            };
-            scenesToSave.unshift(characterScene);
-        }
-        
-        storyData.scenes = scenesToSave;
-        localStorage.setItem(currentStoryKey.value, JSON.stringify(storyData));
-      }
-    } catch (error) {
-      console.error('无法更新历史记录:', error);
-    }
-  }
-}, { deep: true });
+// watch([scenes, peoples], ([newScenes, newPeoples]) => {
+//       const stateToSave = {
+//         scenes: newScenes,
+//         peoples: newPeoples,
+//         currentStoryKey: currentStoryKey.value
+//       };
+//       try {
+//         // Save temporary state for page reloads
+//         localStorage.setItem('storyboard_state', JSON.stringify(stateToSave));
+//       } catch (error) {
+//         if (error.name === 'QuotaExceededError') {
+//           ElMessage.error('本地存储空间不足，无法保存当前状态。');
+//         } else {
+//           console.error('保存状态失败:', error);
+//         }
+//       }
+    
+//       // Save back to the main story record for history
+//       if (currentStoryKey.value) {
+//         try {
+//           const storyDataJSON = localStorage.getItem(currentStoryKey.value);
+//           if (storyDataJSON) {
+//             const storyData = JSON.parse(storyDataJSON);
+            
+//             storyData.characters = newPeoples.map(p => ({
+//               name: p.name,
+//               description: p.description
+//             }));
+    
+//             storyData.scenes = newScenes.map(s => ({
+//               image_prompt: s.image_prompt,
+//               narration: s.narration,
+//               video_promt: s.video_promt,
+//             }));
+            
+//             localStorage.setItem(currentStoryKey.value, JSON.stringify(storyData));
+//           }
+//         } catch (error) {
+//           console.error('无法更新历史记录:', error);
+//         }
+//       }
+//     }, { deep: true });
 
 const add = ()=> scenes.value.push({ image_prompt: '', narration: '',video_promt: '', images: [] })
 const remove = (idx)=> scenes.value.splice(idx,1)
@@ -331,49 +327,7 @@ const clearAll = () => {
   peoples.value = []
   ElMessage.success('已清空所有分镜')
 }
-const loadFromPromptGenerator = () => {
-  try {
-    const stored = localStorage.getItem('storyboard_scenes')
-    scenes.value = []
-    peoples.value = []
-    if (stored) {
-      const loadedScenes = JSON.parse(stored)
-      if (Array.isArray(loadedScenes) && loadedScenes.length > 1) {
-         loadedScenes.map((s,_idx) => {
-          if(_idx == 0 && Array.isArray(s.image_prompt)) {
-            // Assuming the first scene prompt describes characters
-            // Format: CharacterName:Description;CharacterName2:Description2
-            const characterStrings = s.image_prompt
-            peoples.value = characterStrings.map(str => {
-              const [name, description] = str.split(':');
-              return { name: name.trim(), description: description ? description.trim() : name.trim() + ' profile image' };
-            });
-          } else {
-            scenes.value.push({ ...s, images: [] });
-          }
-         });
-        ElMessage.success(`已加载 ${loadedScenes.length} 个分镜`)
-        localStorage.removeItem('storyboard_scenes')
-      } else if (Array.isArray(loadedScenes) && loadedScenes.length === 1) {
-        // If only one scene, assume it's character prompt
-        const s = loadedScenes[0];
-        const characterStrings = s.image_prompt.split(';').filter(str => str.trim() !== '');
-          peoples.value = characterStrings.map(str => {
-            const [name, description] = str.split(':');
-            return { name: name.trim(), description: description ? description.trim() : name.trim() + ' profile image' };
-          });
-        ElMessage.warning('检测到单个分镜数据，尝试解析为角色信息');
-      } else {
-        ElMessage.warning('没有可用的分镜数据')
-      }
-    } else {
-      ElMessage.warning('没有找到保存的分镜数据')
-    }
-  } catch (error) {
-    console.error('加载分镜数据失败:', error)
-    ElMessage.error('加载失败，数据可能已损坏')
-  }
-}
+
 
 const getStoryIndex = () => JSON.parse(localStorage.getItem('story_index') || '[]');
 
@@ -386,65 +340,34 @@ const loadHistory = () => {
 };
 
 const loadStory = (key, closeDialog = true) => {
-  const data = JSON.parse(localStorage.getItem(key) || '{}');
-  if (data.scenes && Array.isArray(data.scenes)) {
-    scenes.value = [];
-    peoples.value = [];
-    const loadedScenes = data.scenes;
-
-    if (loadedScenes.length > 0) {
-        const firstScene = loadedScenes[0];
-        let isCharacterScene = false;
-
-        // Check if it's a character scene (either as array or corrupted string)
-        if (Array.isArray(firstScene.image_prompt)) {
-            isCharacterScene = true;
-        } else if (typeof firstScene.image_prompt === 'string' && firstScene.image_prompt.includes(':') && !firstScene.narration && !firstScene.video_promt) {
-            isCharacterScene = true;
+      const data = JSON.parse(localStorage.getItem(key) || '{}');
+      
+      // Support new format { characters: [], scenes: [] }
+      if (data.scenes && Array.isArray(data.scenes)) {
+        peoples.value = (data.characters || []).map(c => ({
+          name: c.name || '',
+          description: c.description || ''
+        }));
+    
+        scenes.value = data.scenes.map(s => ({
+          image_prompt: s.image_prompt || '',
+          narration: s.narration || '',
+          video_promt: s.video_promt || '',
+          images: [], // images are not saved in the story, they are generated
+        }));
+    
+        storyTheme.value = localStorage.getItem('script_topic') || localStorage.getItem('story_theme') || data.topic || 'storyboard';
+        currentStoryKey.value = key;
+        if (closeDialog) {
+          showHistoryDialog.value = false;
         }
-
-        if (isCharacterScene) {
-            const characterStrings = Array.isArray(firstScene.image_prompt) 
-                ? firstScene.image_prompt 
-                : firstScene.image_prompt.split(',');
-
-            peoples.value = characterStrings.map(str => {
-                const [name, ...descParts] = str.split(':');
-                const description = descParts.join(':').trim();
-                return { name: name.trim(), description: description || name.trim() + ' profile image' };
-            });
-
-            // The rest of the scenes
-            scenes.value = loadedScenes.slice(1).map(s => ({
-                image_prompt: s.image_prompt || '',
-                narration: s.narration || '',
-                video_promt: s.video_promt || '',
-                images: [],
-            }));
-        } else {
-            // No character scene found, treat all as normal scenes
-            scenes.value = loadedScenes.map(s => ({
-                image_prompt: s.image_prompt || '',
-                narration: s.narration || '',
-                video_promt: s.video_promt || '',
-                images: [],
-            }));
-        }
-    }
-
-    storyTheme.value = data.topic || 'storyboard';
-    currentStoryKey.value = key;
-    if (closeDialog) {
-      showHistoryDialog.value = false;
-    }
-    ElMessage.success(`已加载分镜: ${data.topic}`);
-  } else {
-    ElMessage.warning('此历史记录中没有可用的分镜数据。');
-  }
-};
+        ElMessage.success(`已加载分镜: ${data.topic}`);
+      } else {
+        ElMessage.warning('此历史记录中没有可用的分镜数据。');
+      }
+    };
 
 const handleGlobalImageChange = (file, fileList) => {
-  console.log(file)
   const reader = new FileReader();
   reader.onload = (e) => {
     const base64Url = e.target.result;
@@ -490,9 +413,9 @@ const generateCharacterImage = async (character) => {
     const prompt = character.description;
     let imageUrl = '';
     if(provider.value.includes('dall-e-') || provider.value.includes('gpt-')) {
-      imageUrl = await ImagesAPI.apicoreGenerateOne(prompt, token.value, provider.value, aspectRatio.value, imageSize.value, [], image_style.value, image_quality.value, true);
+      imageUrl = await ImagesAPI.apicoreGenerateOne(prompt + ' 风格：' + image_style.value, token.value, provider.value, aspectRatio.value, imageSize.value, [], image_style.value, image_quality.value, true);
     } else {
-      imageUrl = await ImagesAPI.apicoreGenerateOne(prompt, token.value, provider.value, aspectRatio.value, imageSize.value, [], null, null, true);
+      imageUrl = await ImagesAPI.apicoreGenerateOne(prompt + ' 风格：' + imageStyle.value, token.value, provider.value, aspectRatio.value, imageSize.value, [], null, null, true);
     }
 
     if (imageUrl) {
@@ -503,6 +426,16 @@ const generateCharacterImage = async (character) => {
         url: imageUrl,
         raw: null, // No raw file for generated images
       });
+      // --- BEGIN MODIFICATION: Save image to backend ---
+      try {
+        const filename = `${character.name}.png`;
+        await FileAPI.saveImage(storyTheme.value, filename, imageUrl);
+        // ElMessage.info(`图片 ${filename} 已保存到服务器。`);
+      } catch (saveError) {
+        console.error('保存图片文件失败:', saveError);
+        ElMessage.error('图片生成成功，但保存到服务器失败。');
+      }
+      // --- END MODIFICATION ---
       ElMessage.success(`角色 ${character.name} 图片生成成功`);
     } else {
       ElMessage.error(`角色 ${character.name} 图片生成失败`);
@@ -596,7 +529,7 @@ const exportTexts = () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${storyTheme.value || 'storyboard'}_export.txt`;
+  a.download = `${localStorage.getItem('script_topic') || localStorage.getItem('story_theme') || 'storyboard'}_export.txt`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -642,6 +575,19 @@ const generateImageForScene = async (sceneIndex) => {
       }
       scenes.value[sceneIndex].images.push(url);
       ElMessage.success(`分镜 ${sceneIndex + 1} 图片生成成功`);
+
+      // --- BEGIN MODIFICATION: Save image to backend ---
+      try {
+        const imageIndex = scenes.value[sceneIndex].images.length; // Get index for unique naming
+        const filename = `${sceneIndex + 1}_${imageIndex}.png`;
+        await FileAPI.saveImage(storyTheme.value, filename, url);
+        ElMessage.info(`图片 ${filename} 已保存到服务器。`);
+      } catch (saveError) {
+        console.error('保存图片文件失败:', saveError);
+        ElMessage.error('图片生成成功，但保存到服务器失败。');
+      }
+      // --- END MODIFICATION ---
+
       return true;
     } else {
       ElMessage.error(`分镜 ${sceneIndex + 1} 图片生成失败`);
@@ -732,7 +678,7 @@ onMounted(() => {
   } else {
     token.value = localStorage.getItem('apicore_token') || ''
   }
-  storyTheme.value = localStorage.getItem('story_theme') || 'storyboard';
+  storyTheme.value = localStorage.getItem('script_topic') || localStorage.getItem('story_theme') || 'storyboard';
   loadHistory();
 
   const fromGenerator = localStorage.getItem('from_prompt_generator');

@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ${HOST_STORAGE_PATH}:/app/storyboards
+    # Override the Dockerfile's CMD to enable --reload for development
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    # Healthcheck to ensure backend is ready before frontend starts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/docs')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      # This environment variable tells the Vue app where to find the backend API.
+      # 'backend' is the service name defined above.
+      - VITE_API_BASE=http://localhost:8000
+    volumes:
+      # Mount source code and config files for live reloading
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
+      - ./vite.config.js:/app/vite.config.js
+      - ./package.json:/app/package.json
+      - ./package-lock.json:/app/package-lock.json
+    depends_on:
+      backend:
+        condition: service_healthy
+

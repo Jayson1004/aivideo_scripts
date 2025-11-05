@@ -1,0 +1,19 @@
+[project]
+name = "aivideo-backend"
+version = "0.1.0"
+description = "Backend for AI Video script generation"
+authors = [{ name = "Gemini", email = "gemini@google.com" }]
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "click",
+    "h11",
+    "httpx",
+    "python-dotenv",
+    "pydantic-settings",
+    "aiofiles",
+]
+requires-python = ">=3.11"
+
+[tool.uv]
+# You can add uv-specific configurations here if needed.
