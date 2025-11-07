@@ -837,7 +837,7 @@ const txt_to_img_prompt = ref(`角色：Sora级影视分镜导演与连续性剪
         scenes: [
             {
                 "scene_index": 1,
-                "image_prompt": "<详细的图像描述，包含场景、人物、动作、氛围，需要符合画面剧情>",
+                "image_prompt": "<详细的图像描述，包含场景、人物、构图与人物位置、姿势表情、动作、氛围，需要符合画面剧情>",
                 "narration": "<这一幕的旁白文本>",
                 "video_promt": "<视频提示词，包括运镜（比如镜头推进、镜头环绕、镜头跟随、手持镜头等，需要符合画面剧情）、人物和动作>",
                 "duration_estimate": 5.5
@@ -1025,7 +1025,9 @@ const useInStoryboard = () => {
 // --- JSON Parsing ---
 function sanitizeJsonText(text) {
   if (typeof text !== 'string') return text;
-  let s = text.replace(/\r\n?/g, '\n').replace(/^\ufeff/, '');
+  // Remove thinking process blocks from models that include it in the response.
+  let s = text.replace(/<think>[\s\S]*?<\/think>/, '');
+  s = s.replace(/\r\n?/g, '\n').replace(/^\ufeff/, '');
   s = s.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
   let out = '';
   let inQuote = false;

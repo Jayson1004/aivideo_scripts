@@ -410,7 +410,7 @@ const removeImage = (sceneIndex, imageIndex) => {
 const generateCharacterImage = async (character) => {
   characterImageLoading.value[character.name] = true;
   try {
-    const prompt = character.description;
+    const prompt = character.name + character.description;
     let imageUrl = '';
     if(provider.value.includes('dall-e-') || provider.value.includes('gpt-')) {
       imageUrl = await ImagesAPI.apicoreGenerateOne(prompt + ' 风格：' + image_style.value, token.value, provider.value, aspectRatio.value, imageSize.value, [], image_style.value, image_quality.value, true);
