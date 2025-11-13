@@ -192,7 +192,10 @@
           <template #default="{ row, $index }">
             <div v-if="row.videoId">
               <p>ID: {{ row.videoId }}</p>
-              <p>Status: {{ row.videoStatus }}</p>
+              <el-tooltip :content="row.videoErrorMessage" placement="top" v-if="row.videoErrorMessage">
+                <p style="color: red;">Status: {{ row.videoStatus }}</p>
+              </el-tooltip>
+              <p v-else>Status: {{ row.videoStatus }}</p>
               <el-progress :percentage="row.videoProgress" v-if="row.videoStatus !== 'completed' && row.videoStatus !== 'success' && row.videoStatus !== 'failed' && row.videoStatus !== 'error' && row.videoStatus !== 'fail'" />
               <a :href="row.videoUrl" target="_blank" v-if="row.videoUrl">查看视频</a>
               <el-button size="small" @click="checkVideoStatus($index)" :loading="videoGenerationLoading[$index]" v-if="!row.videoUrl && row.videoStatus !== 'failed' && row.videoStatus !== 'error' && row.videoStatus !== 'fail'">刷新状态</el-button>
@@ -255,7 +258,7 @@ import { Delete, Plus, ZoomIn } from '@element-plus/icons-vue'
 const router = useRouter()
 const goBack = () => router.push('/prompt-generator');
 const scenes = ref([
-  { image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '' }
+  { image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '', videoErrorMessage: '' }
 ])
 const provider = ref('gpt-image-1-all')
 const kietoken = ref(localStorage.getItem('kiee_token')||'')
@@ -362,11 +365,11 @@ watch(kietoken, (k)=>{
 //       }
 //     }, { deep: true });
 
-const add = ()=> scenes.value.push({ image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '' })
+const add = ()=> scenes.value.push({ image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '', videoErrorMessage: '' })
 const remove = (idx)=> scenes.value.splice(idx,1)
 
 const clearAll = () => {
-  scenes.value = [{ image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '' }]
+  scenes.value = [{ image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '', videoErrorMessage: '' }]
   peoples.value = []
   ElMessage.success('已清空所有分镜')
 }
@@ -402,6 +405,7 @@ const loadStory = (key, closeDialog = true) => {
           videoProgress: s.videoProgress || 0,
           videoUrl: s.videoUrl || null,
           videoProvider: s.videoProvider || '',
+          videoErrorMessage: s.videoErrorMessage || '',
         }));
     
         storyTheme.value = localStorage.getItem('script_topic') || localStorage.getItem('story_theme') || data.topic || 'storyboard';
@@ -595,6 +599,7 @@ const regenerateVideoForScene = async (sceneIndex) => {
   scene.videoStatus = '';
   scene.videoProgress = 0;
   scene.videoUrl = null;
+  scene.videoErrorMessage = ''
   await generateVideoForScene(sceneIndex);
 }
 
@@ -765,7 +770,8 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
           ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成成功，但未获取到视频URL。`);
         }
       } else if (statusResponse.status === 'failed' || statusResponse.status === 'error') {
-        ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${statusResponse.status}`);
+        scene.videoErrorMessage = statusResponse.error?.message || statusResponse.status;
+        ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${scene.videoErrorMessage}`);
       } else {
         ElMessage.info(`分镜 ${sceneIndex + 1} 视频状态: ${statusResponse.status}, 进度: ${scene.videoProgress}%`);
         videoPollingTimers.value[sceneIndex] = setTimeout(() => checkVideoStatus(sceneIndex, true), 10000);
@@ -792,7 +798,8 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
             }
           }
         } else if (videoData.state === 'fail') {
-          ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${videoData.failMsg}`);
+          scene.videoErrorMessage = videoData.failMsg;
+          ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${scene.videoErrorMessage}`);
         } else {
           ElMessage.info(`分镜 ${sceneIndex + 1} 视频状态: ${videoData.state}`);
           videoPollingTimers.value[sceneIndex] = setTimeout(() => checkVideoStatus(sceneIndex, true), 10000);
@@ -803,6 +810,7 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
     }
   } catch (e) {
     console.error(e);
+    scene.videoErrorMessage = e.message; // Catch-all for API call errors
     ElMessage.error(`分镜 ${sceneIndex + 1} 视频状态更新失败: ${e.message}`);
   } finally {
     if (!isPolling || scene.videoUrl || scene.videoStatus === 'failed' || scene.videoStatus === 'error' || scene.videoStatus === 'fail' || scene.videoStatus === 'success') {
