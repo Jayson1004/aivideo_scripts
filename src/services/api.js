@@ -166,7 +166,7 @@ export const VideosAPI = {
   getVideoStatus: async (videoId, token) => {
     if (!token) throw new Error('API token is required');
 
-    const { data } = await axios.get(`http://yunwu.ai/v1/videos/${videoId}`, {
+    const { data } = await axios.get(`http://yunwu.ai/v1/videos/${videoId}/content`, {
       headers: {
         'Authorization': `Bearer ${token}`,
       },

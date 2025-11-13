@@ -9,15 +9,15 @@ export default defineConfig({
     port: 5173,
     hmr: false,
     open: false,
-    // proxy: {
-    //   '/v1beta': {
-    //     target: 'http://yunwu.ai',
-    //     changeOrigin: true,
-    //   },
-    //   '/v1': {
-    //     target: 'http://yunwu.ai',
-    //     changeOrigin: true,
-    //   },
-    // }
+    proxy: {
+      '/v1beta': {
+        target: 'http://yunwu.ai',
+        changeOrigin: true,
+      },
+      '/v1': {
+        target: 'http://yunwu.ai',
+        changeOrigin: true,
+      },
+    }
   }
 })
