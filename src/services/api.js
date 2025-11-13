@@ -204,7 +204,7 @@ export const VideosAPI = {
     const { data } = await axios.post('/api/v1/jobs/createTask', payload, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer a791a1ca22649de233d6e52af69e71b5`,
+        'Authorization': `Bearer ${token}`,
       },
     });
 
@@ -216,7 +216,7 @@ export const VideosAPI = {
 
     const { data } = await axios.get(`/api/v1/jobs/recordInfo?taskId=${taskId}`, {
       headers: {
-        'Authorization': `Bearer a791a1ca22649de233d6e52af69e71b5`,
+        'Authorization': `Bearer ${token}`,
       },
     });
 

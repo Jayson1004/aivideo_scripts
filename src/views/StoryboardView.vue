@@ -257,7 +257,7 @@ const scenes = ref([
   { image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '' }
 ])
 const provider = ref('gpt-image-1-all')
-const kietoken = ref('')
+const kietoken = ref(localStorage.getItem('kiee_token')||'')
 const token = ref('')
 const imageSize = ref('1024x1792')
 const aspectRatio = ref('9:16')
@@ -314,7 +314,7 @@ watch([provider, token], ([p, t]) => {
    localStorage.setItem('apicore_token', t)
  }
 })
-watch(()=>kietoken, (k)=>{
+watch(kietoken, (k)=>{
   localStorage.setItem('kiee_token', k)
 })
 
@@ -695,7 +695,7 @@ const generateVideoForScene = async (sceneIndex) => {
         videoSeconds.value,
         aspectRatio,
         !videoWatermark.value,
-        token.value
+        kietoken.value
       );
       if (data.code === 200) {
         scene.videoId = data.data.taskId;
@@ -761,7 +761,7 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
         videoPollingTimers.value[sceneIndex] = setTimeout(() => checkVideoStatus(sceneIndex, true), 10000);
       }
     } else if (scene.videoProvider === 'kie-sora') {
-      data = await VideosAPI.getKieVideoStatus(scene.videoId, token.value);
+      data = await VideosAPI.getKieVideoStatus(scene.videoId, kietoken.value);
       if (data.code === 200) {
         const videoData = data.data;
         scene.videoStatus = videoData.state;
