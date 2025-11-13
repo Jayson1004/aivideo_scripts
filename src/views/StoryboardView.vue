@@ -120,6 +120,7 @@
             <el-option label="yunwu-sora" value="yunwu-sora" />
             <el-option label="kie-sora" value="kie-sora" />
           </el-select>
+          <el-input v-if="videoProvider=='kie-sora'" v-model="kietoken" placeholder="kie token" style="width:300px" />
           <el-select v-model="videoSize" placeholder="视频尺寸" style="width:160px; margin-right: 8px;">
             <el-option label="9:16" value="9x16" />
             <el-option label="16:9" value="16x9" />
@@ -127,7 +128,10 @@
             <el-option label="4:3" value="4x3" />
             <el-option label="3:4" value="3x4" />
           </el-select>
-          <el-input-number v-model="videoSeconds" :min="1" :max="60" style="width: 120px; margin-right: 8px;"/>
+          <el-select v-model="videoSeconds" placeholder="视频时长" style="width:120px; margin-right: 8px;">
+            <el-option label="10s" value="10" />
+            <el-option label="15s" value="15" />
+          </el-select>
           <el-switch v-model="videoIsPrivate" active-text="私有" style="margin-right: 8px;"/>
           <el-switch v-model="videoWatermark" active-text="水印"/>
         </el-form-item>
@@ -253,6 +257,7 @@ const scenes = ref([
   { image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '' }
 ])
 const provider = ref('gpt-image-1-all')
+const kietoken = ref('')
 const token = ref('')
 const imageSize = ref('1024x1792')
 const aspectRatio = ref('9:16')
@@ -290,7 +295,7 @@ const peoples = ref([])
 
 const videoProvider = ref('yunwu-sora')
 const videoSize = ref('9x16')
-const videoSeconds = ref(10)
+const videoSeconds = ref('10')
 const videoIsPrivate = ref(true)
 const videoWatermark = ref(false)
 const videoGenerationLoading = ref({})
@@ -308,6 +313,9 @@ watch([provider, token], ([p, t]) => {
    }
    localStorage.setItem('apicore_token', t)
  }
+})
+watch(()=>kietoken, (k)=>{
+  localStorage.setItem('kiee_token', k)
 })
 
 // watch([scenes, peoples], ([newScenes, newPeoples]) => {
@@ -727,17 +735,17 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
     if (scene.videoProvider === 'yunwu-sora') {
       const statusResponse = await VideosAPI.getYunwuVideoStatus(scene.videoId, token.value);
       scene.videoStatus = statusResponse.status;
-      scene.videoProgress = statusResponse.pending_info.progress_pct * 100;
+      scene.videoProgress = statusResponse.progress || 0;
 
-      if (statusResponse.status === 'success') {
-        const contentResponse = await VideosAPI.getYunwuVideoContent(scene.videoId, token.value);
-        if (contentResponse.video_url) {
-          scene.videoUrl = contentResponse.video_url;
+      if (statusResponse.status === 'completed') {
+        // const contentResponse = await VideosAPI.getYunwuVideoContent(scene.videoId, token.value);
+        if (statusResponse.video_url) {
+          scene.videoUrl = statusResponse.video_url;
           ElMessage.success(`分镜 ${sceneIndex + 1} 视频已生成`);
           // Save video URL to backend
           try {
             const filename = `${storyTheme.value}_scene_${sceneIndex + 1}_video.mp4`;
-            await FileAPI.saveImage(storyTheme.value, filename, contentResponse.video_url);
+            await FileAPI.saveImage(storyTheme.value, filename, statusResponse.video_url);
             ElMessage.info(`视频 ${filename} 已保存到服务器。`);
           } catch (saveError) {
             console.error('保存视频文件失败:', saveError);
