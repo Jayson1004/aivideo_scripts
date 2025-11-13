@@ -134,7 +134,7 @@ export const FileAPI = {
 };
 
 export const VideosAPI = {
-  generateVideo: async (prompt, seconds, imageUrl, size, watermark, isPrivate, token) => {
+  generateYunwuVideo: async (prompt, seconds, imageUrl, size, watermark, isPrivate, token) => {
     if (!token) throw new Error('API token is required');
 
     const formData = new FormData();
@@ -153,7 +153,7 @@ export const VideosAPI = {
       formData.append('input_reference', imageFile);
     }
 
-    const { data } = await axios.post('http://yunwu.ai/v1/videos', formData, {
+    const { data } = await axios.post('/v1/videos', formData, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'multipart/form-data',
@@ -163,12 +163,60 @@ export const VideosAPI = {
     return data;
   },
 
-  getVideoStatus: async (videoId, token) => {
+  getYunwuVideoStatus: async (videoId, token) => {
+    if (!token) throw new Error('API token is required');
+
+    const { data } = await axios.get(`http://yunwu.ai/v1/videos/${videoId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    return data.detail; // Return the detail object which contains status and progress
+  },
+
+  getYunwuVideoContent: async (videoId, token) => {
     if (!token) throw new Error('API token is required');
 
     const { data } = await axios.get(`http://yunwu.ai/v1/videos/${videoId}/content`, {
       headers: {
         'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    return data; // This should contain the video_url
+  },
+
+  generateKieVideo: async (prompt, n_frames, aspect_ratio, remove_watermark, token) => {
+    if (!token) throw new Error('API token is required');
+
+    const payload = {
+      model: 'sora-2-text-to-video',
+      callBackUrl: '',
+      input: {
+        prompt,
+        aspect_ratio,
+        n_frames: n_frames+'',
+        remove_watermark,
+      },
+    };
+
+    const { data } = await axios.post('/api/v1/jobs/createTask', payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer a791a1ca22649de233d6e52af69e71b5`,
+      },
+    });
+
+    return data;
+  },
+
+  getKieVideoStatus: async (taskId, token) => {
+    if (!token) throw new Error('API token is required');
+
+    const { data } = await axios.get(`/api/v1/jobs/recordInfo?taskId=${taskId}`, {
+      headers: {
+        'Authorization': `Bearer a791a1ca22649de233d6e52af69e71b5`,
       },
     });
 

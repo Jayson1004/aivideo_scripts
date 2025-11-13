@@ -116,6 +116,10 @@
           </el-upload>
         </el-form-item>
         <el-form-item label="视频设置">
+          <el-select v-model="videoProvider" placeholder="视频提供方" style="width:160px; margin-right: 8px;">
+            <el-option label="yunwu-sora" value="yunwu-sora" />
+            <el-option label="kie-sora" value="kie-sora" />
+          </el-select>
           <el-select v-model="videoSize" placeholder="视频尺寸" style="width:160px; margin-right: 8px;">
             <el-option label="9:16" value="9x16" />
             <el-option label="16:9" value="16x9" />
@@ -243,6 +247,48 @@ import { ElMessage } from 'element-plus'
 import { ImagesAPI, FileAPI, VideosAPI } from '../services/api'
 import { Delete, Plus, ZoomIn } from '@element-plus/icons-vue'
 
+const router = useRouter()
+const goBack = () => router.push('/prompt-generator');
+const scenes = ref([
+  { image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '' }
+])
+const provider = ref('gpt-image-1-all')
+const token = ref('')
+const imageSize = ref('1024x1792')
+const aspectRatio = ref('9:16')
+const storyTheme = ref('storyboard')
+const imageStyle = ref('') // Default to no style
+const styleOptions = ref([
+  { label: '无风格', value: '' },
+  { label: '3D卡通', value: 'Cartoon Games 3D' },
+  { label: '索尼影片', value: 'Sony Pictures Animation' },
+  { label: '动漫', value: 'anime style' },
+  { label: '像素艺术', value: 'pixel art style' },
+  { label: '低多边形', value: 'low poly style' },
+  { label: '写实', value: 'photorealistic' },
+  { label: 'Roblox像素风', value: 'Roblox pixel' },
+])
+
+const image_style = ref('natural')
+const image_quality = ref('standard')
+const style_options = ref([
+  { label: '自然', value: 'natural' },
+  { label: '超现实和戏剧性', value: 'vivid' }
+])
+
+const imageLoading = ref({})
+const isBatchGenerating = ref(false)
+const showImagePreview = ref(false)
+const previewImageUrl = ref('')
+const showHistoryDialog = ref(false)
+const savedStories = ref([])
+const globalBaseImages = ref([]) // { uid, name, url, raw }
+const enableBaseImage = ref(true) // New ref for the toggle switch
+const characterImageLoading = ref({}) // New ref to track loading state for character images
+const currentStoryKey = ref(null)
+const peoples = ref([])
+
+const videoProvider = ref('yunwu-sora')
 const videoSize = ref('9x16')
 const videoSeconds = ref(10)
 const videoIsPrivate = ref(true)
@@ -250,34 +296,409 @@ const videoWatermark = ref(false)
 const videoGenerationLoading = ref({})
 const videoPollingTimers = ref({}) // New ref to store polling timers
 
+watch([provider, token], ([p, t]) => {
+ if (p === 'gemini-imagen') {
+   localStorage.setItem('gemini_api_key', t)
+  aspectRatio.value = '16:9'
+ } else {
+   if(p == 'dall-e-3') {
+     imageSize.value = '1024x1792'
+   } else {
+     imageSize.value = '1024x1536'
+   }
+   localStorage.setItem('apicore_token', t)
+ }
+})
+
+// watch([scenes, peoples], ([newScenes, newPeoples]) => {
+//       const stateToSave = {
+//         scenes: newScenes,
+//         peoples: newPeoples,
+//         currentStoryKey: currentStoryKey.value
+//       };
+//       try {
+//         // Save temporary state for page reloads
+//         localStorage.setItem('storyboard_state', JSON.stringify(stateToSave));
+//       } catch (error) {
+//         if (error.name === 'QuotaExceededError') {
+//           ElMessage.error('本地存储空间不足，无法保存当前状态。');
+//         } else {
+//           console.error('保存状态失败:', error);
+//         }
+//       }
+    
+//       // Save back to the main story record for history
+//       if (currentStoryKey.value) {
+//         try {
+//           const storyDataJSON = localStorage.getItem(currentStoryKey.value);
+//           if (storyDataJSON) {
+//             const storyData = JSON.parse(storyDataJSON);
+            
+//             storyData.characters = newPeoples.map(p => ({
+//               name: p.name,
+//               description: p.description
+//             }));
+    
+//             storyData.scenes = newScenes.map(s => ({
+//               image_prompt: s.image_prompt,
+//               narration: s.narration,
+//               video_promt: s.video_promt,
+//             }));
+            
+//             localStorage.setItem(currentStoryKey.value, JSON.stringify(storyData));
+//           }
+//         } catch (error) {
+//           console.error('无法更新历史记录:', error);
+//         }
+//       }
+//     }, { deep: true });
+
+const add = ()=> scenes.value.push({ image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '' })
+const remove = (idx)=> scenes.value.splice(idx,1)
+
+const clearAll = () => {
+  scenes.value = [{ image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0, videoUrl: null, videoProvider: '' }]
+  peoples.value = []
+  ElMessage.success('已清空所有分镜')
+}
+
+
+const getStoryIndex = () => JSON.parse(localStorage.getItem('story_index') || '[]');
+
+const loadHistory = () => {
+  const index = getStoryIndex();
+  savedStories.value = index.map(key => {
+    const data = JSON.parse(localStorage.getItem(key) || '{}');
+    return { key, topic: data.topic, createdAt: data.createdAt };
+  }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+};
+
+const loadStory = (key, closeDialog = true) => {
+      const data = JSON.parse(localStorage.getItem(key) || '{}');
+      
+      // Support new format { characters: [], scenes: [] }
+      if (data.scenes && Array.isArray(data.scenes)) {
+        peoples.value = (data.characters || []).map(c => ({
+          name: c.name || '',
+          description: c.description || ''
+        }));
+    
+        scenes.value = data.scenes.map(s => ({
+          image_prompt: s.image_prompt || '',
+          narration: s.narration || '',
+          video_promt: s.video_promt || '',
+          images: [], // images are not saved in the story, they are generated
+          videoId: s.videoId || null,
+          videoStatus: s.videoStatus || '',
+          videoProgress: s.videoProgress || 0,
+          videoUrl: s.videoUrl || null,
+          videoProvider: s.videoProvider || '',
+        }));
+    
+        storyTheme.value = localStorage.getItem('script_topic') || localStorage.getItem('story_theme') || data.topic || 'storyboard';
+        currentStoryKey.value = key;
+        if (closeDialog) {
+          showHistoryDialog.value = false;
+        }
+        ElMessage.success(`已加载分镜: ${data.topic}`);
+      } else {
+        ElMessage.warning('此历史记录中没有可用的分镜数据。');
+      }
+    };
+
+const handleGlobalImageChange = (file, fileList) => {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const base64Url = e.target.result;
+    const initialName = file.name.split('.').slice(0, -1).join('.');
+    const existingIndex = globalBaseImages.value.findIndex(img => img.uid === file.uid);
+    if (existingIndex !== -1) {
+      // Update existing file (e.g., if file.url was a blob URL and now it's base64)
+      globalBaseImages.value[existingIndex].url = base64Url;
+      globalBaseImages.value[existingIndex].name = initialName;
+      // globalBaseImages.value[existingIndex].custom_name = custom_name;
+      globalBaseImages.value[existingIndex].raw = file.raw;
+    } else {
+      globalBaseImages.value.push({
+        uid: file.uid,
+        name: initialName,
+        // custom_name: file.custom_name,
+        url: base64Url,
+        raw: file.raw,
+      });
+    }
+    // ElMessage.success(`垫图 ${file.custom_name} 已添加`);
+  };
+  reader.readAsDataURL(file.raw);
+};
+
+const handleGlobalImageRemove = (file) => {
+  globalBaseImages.value = globalBaseImages.value.filter(img => img.uid !== file.uid);
+  ElMessage.info(`垫图 ${file.name} 已移除`);
+};
+
+const previewImage = (imageUrl) => {
+  previewImageUrl.value = imageUrl
+  showImagePreview.value = true
+}
+
+const removeImage = (sceneIndex, imageIndex) => {
+  scenes.value[sceneIndex].images.splice(imageIndex, 1)
+}
+
+const generateCharacterImage = async (character) => {
+  characterImageLoading.value[character.name] = true;
+  try {
+    const prompt = character.name + character.description;
+    let imageUrl = '';
+    if(provider.value.includes('dall-e-') || provider.value.includes('gpt-')) {
+      imageUrl = await ImagesAPI.apicoreGenerateOne(prompt + ' 风格：' + image_style.value, token.value, provider.value, aspectRatio.value, imageSize.value, [], image_style.value, image_quality.value, true);
+    } else {
+      imageUrl = await ImagesAPI.apicoreGenerateOne(prompt + ' 风格：' + imageStyle.value, token.value, provider.value, aspectRatio.value, imageSize.value, [], null, null, true);
+    }
+
+    if (imageUrl) {
+      const newUid = Date.now() + Math.random().toString(36).substring(2, 9); // Generate a unique ID
+      globalBaseImages.value.push({
+        uid: newUid,
+        name: character.name,
+        url: imageUrl,
+        raw: null, // No raw file for generated images
+      });
+      // --- BEGIN MODIFICATION: Save image to backend ---
+      try {
+        const filename = `${character.name}.png`;
+        await FileAPI.saveImage(storyTheme.value, filename, imageUrl);
+        // ElMessage.info(`图片 ${filename} 已保存到服务器。`);
+      } catch (saveError) {
+        console.error('保存图片文件失败:', saveError);
+        ElMessage.error('图片生成成功，但保存到服务器失败。');
+      }
+      // --- END MODIFICATION ---
+      ElMessage.success(`角色 ${character.name} 图片生成成功`);
+    } else {
+      ElMessage.error(`角色 ${character.name} 图片生成失败`);
+    }
+  } catch (e) {
+    console.error(e);
+    ElMessage.error(`角色 ${character.name} 图片生成失败: ${e.message}`);
+  } finally {
+    characterImageLoading.value[character.name] = false;
+  }
+};
+
+const exportTexts = () => {
+  let textToExport = '';
+  scenes.value.forEach((scene, index) => {
+    textToExport += `## 分镜 ${index + 1}\n\n`;
+    textToExport += `**提示词:**\n${scene.image_prompt}\n\n`;
+    textToExport += `**旁白:**\n${scene.narration || '无'}\n\n`;
+    textToExport += `**视频镜头提示词:**\n${scene.video_promt || '无'}\n\n`;
+    
+    textToExport += '\n------------------------------------\n\n';
+  });
+
+  const blob = new Blob([textToExport], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${localStorage.getItem('script_topic') || localStorage.getItem('story_theme') || 'storyboard'}_export.txt`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  ElMessage.success('文案已导出为 TXT 文件');
+};
+
+const generateImageForScene = async (sceneIndex) => {
+  const scene = scenes.value[sceneIndex];
+  if (!scene.image_prompt.trim()) {
+    ElMessage.warning('请先输入提示词');
+    return false;
+  }
+
+  let referenceImages = [];
+  if (enableBaseImage.value) {
+    // Find matching base images only if enabled
+    referenceImages = globalBaseImages.value
+      .filter(img => scene.image_prompt.includes(img.name))
+      .map(img => ({ name: img.name, url: img.url }));
+
+    if (referenceImages.length > 0) {
+      const imageNames = referenceImages.map(img => img.name).join(', ');
+      ElMessage.info(`分镜 ${sceneIndex + 1} 将使用垫图: ${imageNames}`);
+    }
+  }
+  
+  imageLoading.value[sceneIndex] = true;
+  try {
+    const finalPrompt = imageStyle.value ? `${scene.image_prompt} ${imageStyle.value}` : scene.image_prompt;
+    let url = ''
+    if(provider.value.includes('dall-e-') || provider.value.includes('gpt-')) {
+      url = await ImagesAPI.apicoreGenerateOne(finalPrompt, token.value, provider.value, aspectRatio.value, imageSize.value, referenceImages, image_style.value, image_quality.value);
+    } else {
+      url = await ImagesAPI.apicoreGenerateOne(finalPrompt, token.value, provider.value, aspectRatio.value, imageSize.value, referenceImages);
+
+    }
+
+    if (url) {
+      if (!scenes.value[sceneIndex].images) {
+        scenes.value[sceneIndex].images = [];
+      }
+      scenes.value[sceneIndex].images.push(url);
+      ElMessage.success(`分镜 ${sceneIndex + 1} 图片生成成功`);
+
+      // --- BEGIN MODIFICATION: Save image to backend ---
+      try {
+        const imageIndex = scenes.value[sceneIndex].images.length; // Get index for unique naming
+        const filename = `${sceneIndex + 1}_${imageIndex}.png`;
+        await FileAPI.saveImage(storyTheme.value, filename, url);
+        ElMessage.info(`图片 ${filename} 已保存到服务器。`);
+      } catch (saveError) {
+        console.error('保存图片文件失败:', saveError);
+        ElMessage.error('图片生成成功，但保存到服务器失败。');
+      }
+      // --- END MODIFICATION ---
+
+      return true;
+    } else {
+      ElMessage.error(`分镜 ${sceneIndex + 1} 图片生成失败`);
+      return false;
+    }
+  } catch (e) {
+    console.error(e);
+    ElMessage.error(`分镜 ${sceneIndex + 1} 图片生成失败: ${e.message}`);
+    return false;
+  } finally {
+    imageLoading.value[sceneIndex] = false;
+  }
+}
+
+const regenerateImageForScene = async (sceneIndex) => {
+  scenes.value[sceneIndex].images = [];
+  return await generateImageForScene(sceneIndex);
+}
+
+const generateAllImages = async () => {
+  const scenesToGenerate = scenes.value
+    .map((s, i) => ({ scene: s, index: i }))
+    .filter(item => item.scene.image_prompt.trim() && (!item.scene.images || item.scene.images.length === 0));
+
+  if (scenesToGenerate.length === 0) {
+    ElMessage.warning('所有分镜都已有图片，或没有输入提示词。');
+    return;
+  }
+
+  isBatchGenerating.value = true;
+  ElMessage.info(`开始批量生成 ${scenesToGenerate.length} 张图片...`);
+
+  const batchSize = 6;
+  let failedScenes = [];
+
+  try {
+    for (let i = 0; i < scenesToGenerate.length; i += batchSize) {
+      const batch = scenesToGenerate.slice(i, i + batchSize);
+      ElMessage.info(`正在生成第 ${i + 1} 到 ${i + batch.length} 张图片...`);
+      
+      const generationPromises = batch.map(async (item) => {
+        const success = await generateImageForScene(item.index);
+        if (!success) {
+          failedScenes.push(item);
+        }
+      });
+      
+      await Promise.all(generationPromises);
+      if (scenesToGenerate.length > batchSize) {
+        ElMessage.success(`批次 ${Math.floor(i / batchSize) + 1} 已完成。`);
+      }
+    }
+
+    let retryCount = 0;
+    while (failedScenes.length > 0 && retryCount < 3) {
+        retryCount++;
+        ElMessage.warning(`${failedScenes.length} 张图片生成失败，正在进行第 ${retryCount} 次重试...`);
+        
+        const currentFailures = [...failedScenes];
+        failedScenes = [];
+
+        const retryPromises = currentFailures.map(async (item) => {
+            const success = await regenerateImageForScene(item.index);
+            if (!success) {
+                failedScenes.push(item);
+            }
+        });
+        await Promise.all(retryPromises);
+    }
+
+    if (failedScenes.length > 0) {
+        ElMessage.error(`${failedScenes.length} 张图片经过3次重试后仍然生成失败。`);
+    } else {
+        ElMessage.success('所有图片已生成完毕。');
+    }
+
+  } catch (e) {
+    console.error(e);
+    ElMessage.error(`批量生成过程中出现错误: ${e.message}`);
+  } finally {
+    isBatchGenerating.value = false;
+  }
+}
+
 const generateVideoForScene = async (sceneIndex) => {
   const scene = scenes.value[sceneIndex];
   
   videoGenerationLoading.value[sceneIndex] = true;
   try {
-    const imageUrl = (scene.images && scene.images.length > 0) ? scene.images[0] : null;
     const prompt = `${scene.image_prompt} ${scene.video_promt}`.trim();
-
     if (!prompt) {
       ElMessage.warning('请至少输入图片或视频提示词');
       return;
     }
 
-    const data = await VideosAPI.generateVideo(
-      prompt,
-      videoSeconds.value,
-      imageUrl,
-      videoSize.value,
-      videoWatermark.value,
-      videoIsPrivate.value,
-      token.value
-    );
-    scene.videoId = data.id;
-    scene.videoStatus = data.status;
-    scene.videoProgress = data.progress;
-    ElMessage.success(`分镜 ${sceneIndex + 1} 视频生成任务已创建`);
+    scene.videoProvider = videoProvider.value;
+    let data;
 
-    // Start polling for video status
+    if (scene.videoProvider === 'yunwu-sora') {
+      const imageUrl = (scene.images && scene.images.length > 0) ? scene.images[0] : null;
+      data = await VideosAPI.generateYunwuVideo(
+        prompt,
+        videoSeconds.value,
+        imageUrl,
+        videoSize.value,
+        videoWatermark.value,
+        videoIsPrivate.value,
+        token.value
+      );
+      scene.videoId = data.id;
+      scene.videoStatus = data.status;
+      scene.videoProgress = data.progress;
+    } else if (scene.videoProvider === 'kie-sora') {
+      const aspectRatioMap = {
+        '9x16': 'portrait',
+        '16x9': 'landscape',
+        '1x1': 'square',
+        '4x3': 'landscape', // Not a perfect match
+        '3x4': 'portrait', // Not a perfect match
+      };
+      const aspectRatio = aspectRatioMap[videoSize.value] || 'landscape';
+      data = await VideosAPI.generateKieVideo(
+        prompt,
+        videoSeconds.value,
+        aspectRatio,
+        !videoWatermark.value,
+        token.value
+      );
+      if (data.code === 200) {
+        scene.videoId = data.data.taskId;
+        scene.videoStatus = 'queued';
+        scene.videoProgress = 0;
+      } else {
+        throw new Error(data.message || 'Failed to create video task');
+      }
+    }
+
+    ElMessage.success(`分镜 ${sceneIndex + 1} 视频生成任务已创建`);
     checkVideoStatus(sceneIndex, true);
 
   } catch (e) {
@@ -295,7 +716,6 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
     return;
   }
 
-  // Clear existing timer if any
   if (videoPollingTimers.value[sceneIndex]) {
     clearTimeout(videoPollingTimers.value[sceneIndex]);
     delete videoPollingTimers.value[sceneIndex];
@@ -303,38 +723,71 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
 
   videoGenerationLoading.value[sceneIndex] = true;
   try {
-    const data = await VideosAPI.getVideoStatus(scene.videoId, token.value);
-    scene.videoStatus = data.status;
-    scene.videoProgress = data.progress;
+    let data;
+    if (scene.videoProvider === 'yunwu-sora') {
+      const statusResponse = await VideosAPI.getYunwuVideoStatus(scene.videoId, token.value);
+      scene.videoStatus = statusResponse.status;
+      scene.videoProgress = statusResponse.pending_info.progress_pct * 100;
 
-    if (data.video_url) {
-      scene.videoUrl = data.video_url;
-      ElMessage.success(`分镜 ${sceneIndex + 1} 视频已生成`);
-
-      // Save video URL to backend
-      try {
-        const filename = `${storyTheme.value}_scene_${sceneIndex + 1}_video.mp4`; // Assuming mp4
-        await FileAPI.saveImage(storyTheme.value, filename, data.video_url); // Using saveImage for now
-        ElMessage.info(`视频 ${filename} 已保存到服务器。`);
-      } catch (saveError) {
-        console.error('保存视频文件失败:', saveError);
-        ElMessage.error('视频生成成功，但保存到服务器失败。');
+      if (statusResponse.status === 'success') {
+        const contentResponse = await VideosAPI.getYunwuVideoContent(scene.videoId, token.value);
+        if (contentResponse.video_url) {
+          scene.videoUrl = contentResponse.video_url;
+          ElMessage.success(`分镜 ${sceneIndex + 1} 视频已生成`);
+          // Save video URL to backend
+          try {
+            const filename = `${storyTheme.value}_scene_${sceneIndex + 1}_video.mp4`;
+            await FileAPI.saveImage(storyTheme.value, filename, contentResponse.video_url);
+            ElMessage.info(`视频 ${filename} 已保存到服务器。`);
+          } catch (saveError) {
+            console.error('保存视频文件失败:', saveError);
+            ElMessage.error('视频生成成功，但保存到服务器失败。');
+          }
+        } else {
+          ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成成功，但未获取到视频URL。`);
+        }
+      } else if (statusResponse.status === 'failed' || statusResponse.status === 'error') {
+        ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${statusResponse.status}`);
+      } else {
+        ElMessage.info(`分镜 ${sceneIndex + 1} 视频状态: ${statusResponse.status}, 进度: ${scene.videoProgress}%`);
+        videoPollingTimers.value[sceneIndex] = setTimeout(() => checkVideoStatus(sceneIndex, true), 10000);
       }
-
-    } else if (data.status === 'failed' || data.status === 'error') {
-      ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${data.status}`);
-    } else {
-      ElMessage.info(`分镜 ${sceneIndex + 1} 视频状态: ${data.status}, 进度: ${data.progress}%`);
-      // Continue polling if not completed and no video_url
-      videoPollingTimers.value[sceneIndex] = setTimeout(() => {
-        checkVideoStatus(sceneIndex, true);
-      }, 10000); // Poll every 10 seconds
+    } else if (scene.videoProvider === 'kie-sora') {
+      data = await VideosAPI.getKieVideoStatus(scene.videoId, token.value);
+      if (data.code === 200) {
+        const videoData = data.data;
+        scene.videoStatus = videoData.state;
+        if (videoData.state === 'success') {
+          scene.videoProgress = 100;
+          const result = JSON.parse(videoData.resultJson);
+          if (result.resultUrls && result.resultUrls.length > 0) {
+            scene.videoUrl = result.resultUrls[0];
+            ElMessage.success(`分镜 ${sceneIndex + 1} 视频已生成`);
+            // Save video URL to backend
+            try {
+              const filename = `${storyTheme.value}_scene_${sceneIndex + 1}_video.mp4`;
+              await FileAPI.saveImage(storyTheme.value, filename, scene.videoUrl);
+              ElMessage.info(`视频 ${filename} 已保存到服务器。`);
+            } catch (saveError) {
+              console.error('保存视频文件失败:', saveError);
+              ElMessage.error('视频生成成功，但保存到服务器失败。');
+            }
+          }
+        } else if (videoData.state === 'fail') {
+          ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${videoData.failMsg}`);
+        } else {
+          ElMessage.info(`分镜 ${sceneIndex + 1} 视频状态: ${videoData.state}`);
+          videoPollingTimers.value[sceneIndex] = setTimeout(() => checkVideoStatus(sceneIndex, true), 10000);
+        }
+      } else {
+        throw new Error(data.message || 'Failed to get video status');
+      }
     }
   } catch (e) {
     console.error(e);
     ElMessage.error(`分镜 ${sceneIndex + 1} 视频状态更新失败: ${e.message}`);
   } finally {
-    if (!isPolling || scene.videoUrl || scene.videoStatus === 'failed' || scene.videoStatus === 'error') {
+    if (!isPolling || scene.videoUrl || scene.videoStatus === 'failed' || scene.videoStatus === 'error' || scene.videoStatus === 'fail' || scene.videoStatus === 'success') {
       videoGenerationLoading.value[sceneIndex] = false;
     }
   }

@@ -18,6 +18,11 @@ export default defineConfig({
         target: 'http://yunwu.ai',
         changeOrigin: true,
       },
+      '/api': {
+        target: 'https://api.kie.ai',
+        changeOrigin: true,
+      },
+      
     }
   }
 })
