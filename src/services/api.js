@@ -132,3 +132,46 @@ export const FileAPI = {
     return data;
   }
 };
+
+export const VideosAPI = {
+  generateVideo: async (prompt, seconds, imageUrl, size, watermark, isPrivate, token) => {
+    if (!token) throw new Error('API token is required');
+
+    const formData = new FormData();
+    formData.append('model', 'sora-2');
+    formData.append('prompt', prompt);
+    formData.append('seconds', seconds);
+    formData.append('size', size);
+    formData.append('watermark', watermark);
+    formData.append('private', isPrivate);
+
+    if (imageUrl) {
+      // Fetch the image and convert it to a Blob
+      const imageResponse = await fetch(imageUrl);
+      const imageBlob = await imageResponse.blob();
+      const imageFile = new File([imageBlob], "input_reference.png", { type: 'image/png' });
+      formData.append('input_reference', imageFile);
+    }
+
+    const { data } = await axios.post('http://yunwu.ai/v1/videos', formData, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    return data;
+  },
+
+  getVideoStatus: async (videoId, token) => {
+    if (!token) throw new Error('API token is required');
+
+    const { data } = await axios.get(`http://yunwu.ai/v1/videos/${videoId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+
+    return data;
+  }
+};

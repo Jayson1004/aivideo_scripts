@@ -115,6 +115,18 @@
             </template>
           </el-upload>
         </el-form-item>
+        <el-form-item label="视频设置">
+          <el-select v-model="videoSize" placeholder="视频尺寸" style="width:160px; margin-right: 8px;">
+            <el-option label="9:16" value="9x16" />
+            <el-option label="16:9" value="16x9" />
+            <el-option label="1:1" value="1x1" />
+            <el-option label="4:3" value="4x3" />
+            <el-option label="3:4" value="3x4" />
+          </el-select>
+          <el-input-number v-model="videoSeconds" :min="1" :max="60" style="width: 120px; margin-right: 8px;"/>
+          <el-switch v-model="videoIsPrivate" active-text="私有" style="margin-right: 8px;"/>
+          <el-switch v-model="videoWatermark" active-text="水印"/>
+        </el-form-item>
       </el-form>
 
       <el-divider />
@@ -168,11 +180,22 @@
             <el-input v-model="row.video_promt" type="textarea" :rows="5" placeholder="请输入视频镜头..." />
           </template>
         </el-table-column>
+        <el-table-column label="视频生成" width="150">
+          <template #default="{ row, $index }">
+            <div v-if="row.videoId">
+              <p>ID: {{ row.videoId }}</p>
+              <p>Status: {{ row.videoStatus }}</p>
+              <el-progress :percentage="row.videoProgress" />
+              <el-button size="small" @click="checkVideoStatus($index)" :loading="videoGenerationLoading[$index]">刷新状态</el-button>
+            </div>
+            <el-button v-else size="small" @click="generateVideoForScene($index)" :loading="videoGenerationLoading[$index]">生成视频</el-button>
+          </template>
+        </el-table-column>
         <el-table-column label="操作" width="120">
           <template #default="{ $index }">
             <div style="display:flex; flex-direction: column; gap:8px;">
               <el-button size="small" @click="generateImageForScene($index)" :loading="imageLoading[$index]">生成图片</el-button>
-              <el-button size="small" @click="regenerateImageForScene($index)" :loading="imageLoading[$index]">重新生成</el-button>
+              <!-- <el-button size="small" @click="regenerateImageForScene($index)" :loading="imageLoading[$index]">重新生成</el-button> -->
               <el-button size="small" type="danger" @click="remove($index)">删除此镜</el-button>
             </div>
           </template>
@@ -216,13 +239,19 @@
 import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ImagesAPI, FileAPI } from '../services/api'
+import { ImagesAPI, FileAPI, VideosAPI } from '../services/api'
 import { Delete, Plus, ZoomIn } from '@element-plus/icons-vue'
+
+const videoSize = ref('9x16')
+const videoSeconds = ref(10)
+const videoIsPrivate = ref(true)
+const videoWatermark = ref(false)
+const videoGenerationLoading = ref({})
 
 const router = useRouter()
 const goBack = () => router.push('/prompt-generator');
 const scenes = ref([
-  { image_prompt: '', narration: '',video_promt: '', images: [] }
+  { image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0 }
 ])
 const provider = ref('gpt-image-1-all')
 const token = ref('')
@@ -317,11 +346,11 @@ watch([provider, token], ([p, t]) => {
 //       }
 //     }, { deep: true });
 
-const add = ()=> scenes.value.push({ image_prompt: '', narration: '',video_promt: '', images: [] })
+const add = ()=> scenes.value.push({ image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0 })
 const remove = (idx)=> scenes.value.splice(idx,1)
 
 const clearAll = () => {
-  scenes.value = [{ image_prompt: '', narration: '',video_promt: '', images: [] }]
+  scenes.value = [{ image_prompt: '', narration: '',video_promt: '', images: [], videoId: null, videoStatus: '', videoProgress: 0 }]
   peoples.value = []
   ElMessage.success('已清空所有分镜')
 }
@@ -352,6 +381,9 @@ const loadStory = (key, closeDialog = true) => {
           narration: s.narration || '',
           video_promt: s.video_promt || '',
           images: [], // images are not saved in the story, they are generated
+          videoId: s.videoId || null,
+          videoStatus: s.videoStatus || '',
+          videoProgress: s.videoProgress || 0,
         }));
     
         storyTheme.value = localStorage.getItem('script_topic') || localStorage.getItem('story_theme') || data.topic || 'storyboard';
@@ -601,6 +633,65 @@ const generateAllImages = async () => {
     ElMessage.error(`批量生成过程中出现错误: ${e.message}`);
   } finally {
     isBatchGenerating.value = false;
+  }
+}
+
+const generateVideoForScene = async (sceneIndex) => {
+  const scene = scenes.value[sceneIndex];
+  
+  videoGenerationLoading.value[sceneIndex] = true;
+  try {
+    const imageUrl = (scene.images && scene.images.length > 0) ? scene.images[0] : null;
+    const prompt = `${scene.image_prompt} ${scene.video_promt}`.trim();
+
+    if (!prompt) {
+      ElMessage.warning('请至少输入图片或视频提示词');
+      return;
+    }
+
+    const data = await VideosAPI.generateVideo(
+      prompt,
+      videoSeconds.value,
+      imageUrl,
+      videoSize.value,
+      videoWatermark.value,
+      videoIsPrivate.value,
+      token.value
+    );
+    scene.videoId = data.id;
+    scene.videoStatus = data.status;
+    scene.videoProgress = data.progress;
+    ElMessage.success(`分镜 ${sceneIndex + 1} 视频生成任务已创建`);
+  } catch (e) {
+    console.error(e);
+    ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${e.message}`);
+  } finally {
+    videoGenerationLoading.value[sceneIndex] = false;
+  }
+}
+
+const checkVideoStatus = async (sceneIndex) => {
+  const scene = scenes.value[sceneIndex];
+  if (!scene.videoId) {
+    ElMessage.warning('没有视频ID');
+    return;
+  }
+
+  videoGenerationLoading.value[sceneIndex] = true;
+  try {
+    const data = await VideosAPI.getVideoStatus(scene.videoId, token.value);
+    scene.videoStatus = data.status;
+    scene.videoProgress = data.progress;
+    if (data.status === 'completed') {
+      ElMessage.success(`分镜 ${sceneIndex + 1} 视频已生成`);
+    } else {
+      ElMessage.info(`分镜 ${sceneIndex + 1} 视频状态已更新`);
+    }
+  } catch (e) {
+    console.error(e);
+    ElMessage.error(`分镜 ${sceneIndex + 1} 视频状态更新失败: ${e.message}`);
+  } finally {
+    videoGenerationLoading.value[sceneIndex] = false;
   }
 }
 
