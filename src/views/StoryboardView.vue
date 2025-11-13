@@ -150,7 +150,6 @@
                 <img :src="img" style="width:100%; height:100%; object-fit:cover; cursor:pointer;" @click="previewImage(img)" />
                 <div style="position:absolute; top:0; right:0; background: rgba(0,0,0,0.5); padding: 2px;">
                   <el-button-group>
-                    <el-button size="small" type="primary" :icon="Download" style="width: 24px; height: 24px;" @click="handleDownload(img, $index, idx)" />
                     <el-button size="small" type="danger" :icon="Delete" style="width: 24px; height: 24px;" @click="removeImage($index, idx)" />
                   </el-button-group>
                 </div>
@@ -183,7 +182,6 @@
         <el-button @click="add">新增分镜</el-button>
         <el-button @click="clearAll">清空所有</el-button>
         <el-button type="primary" :loading="isBatchGenerating" @click="generateAllImages">批量生成所有图片</el-button>
-        <el-button type="success" @click="downloadAllImages" :disabled="scenes.every(s => !s.images || s.images.length === 0)">批量下载所有图片</el-button>
         
       </div>
     </el-card>
@@ -219,7 +217,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ImagesAPI, FileAPI } from '../services/api'
-import { Download, Delete, Plus, ZoomIn } from '@element-plus/icons-vue'
+import { Delete, Plus, ZoomIn } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const goBack = () => router.push('/prompt-generator');
@@ -448,64 +446,6 @@ const generateCharacterImage = async (character) => {
   }
 };
 
-const downloadImage = async (url, filename) => {
-  try {
-    if (url.startsWith('data:')) {
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.removeChild(a);
-        return;
-    }
-    const response = await fetch(url);
-    if (!response.ok) throw new Error('Network response was not ok.');
-    const blob = await response.blob();
-    const objectUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = objectUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.removeChild(a);
-    window.URL.revokeObjectURL(objectUrl);
-  } catch (error) {
-    console.error('Download failed:', error);
-    ElMessage.error('图片下载失败。请尝试右键-图片另存为。');
-    window.open(url, '_blank');
-  }
-};
-
-const handleDownload = (url, sceneIndex, imageIndex) => {
-  const now = new Date();
-  const timestamp = now.getFullYear().toString() +
-    (now.getMonth() + 1).toString().padStart(2, '0') +
-    now.getDate().toString().padStart(2, '0') + '_' +
-    now.getHours().toString().padStart(2, '0') +
-    now.getMinutes().toString().padStart(2, '0') +
-    now.getSeconds().toString().padStart(2, '0');
-  const filename = `${timestamp}_scene_${sceneIndex + 1}_img_${imageIndex + 1}.png`;
-  downloadImage(url, filename);
-}
-
-const downloadAllImages = async () => {
-  const totalImages = scenes.value.reduce((acc, s) => acc + (s.images?.length || 0), 0);
-  if (totalImages === 0) {
-    ElMessage.warning('没有可下载的图片。');
-    return;
-  }
-  ElMessage.info(`开始批量下载 ${totalImages} 张图片...`);
-  for (let i = 0; i < scenes.value.length; i++) {
-    if (scenes.value[i].images) {
-      for (let j = 0; j < scenes.value[i].images.length; j++) {
-        const imgUrl = scenes.value[i].images[j];
-        await handleDownload(imgUrl, i, j);
-        await new Promise(resolve => setTimeout(resolve, 300)); // Stagger downloads
-      }
-    }
-  }
-}
-
 const exportTexts = () => {
   let textToExport = '';
   scenes.value.forEach((scene, index) => {
@@ -514,14 +454,6 @@ const exportTexts = () => {
     textToExport += `**旁白:**\n${scene.narration || '无'}\n\n`;
     textToExport += `**视频镜头提示词:**\n${scene.video_promt || '无'}\n\n`;
     
-    if (scene.images && scene.images.length > 0) {
-      textToExport += '**图片链接:**\n';
-      scene.images.forEach((image) => {
-        textToExport += `${image}\n`;
-      });
-    } else {
-      textToExport += '**图片链接:**\n无\n';
-    }
     textToExport += '\n------------------------------------\n\n';
   });
 
