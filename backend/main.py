@@ -422,23 +422,40 @@ async def save_text_file(request: SaveTextRequest):
 @app.post("/api/save-image")
 async def save_image_file(request: SaveImageRequest):
     """
-    Saves a base64 data URL as an image file in a specified topic directory.
+    Saves an image/video from a data URL or a network URL to a file.
     """
     try:
         save_dir = os.path.join(settings.storyboard_save_path, request.topic)
         os.makedirs(save_dir, exist_ok=True)
         file_path = os.path.join(save_dir, request.filename)
 
-        # Decode the data URL
-        try:
-            header, encoded = request.image_data.split(',', 1)
-            data = base64.b64decode(encoded)
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid data URL format.")
+        data_to_write = b""
+
+        # Check if image_data is a URL
+        if request.image_data.startswith(('http://', 'https://')):
+            async with httpx.AsyncClient() as client:
+                try:
+                    response = await client.get(request.image_data, follow_redirects=True)
+                    response.raise_for_status()
+                    data_to_write = await response.aread()
+                except httpx.RequestError as e:
+                    raise HTTPException(status_code=502, detail=f"Failed to download file from URL: {e}")
+                except httpx.HTTPStatusError as e:
+                    raise HTTPException(status_code=e.response.status_code, detail=f"Error response from URL: {e.response.text}")
+        # Assume it's a data URL
+        else:
+            try:
+                header, encoded = request.image_data.split(',', 1)
+                data_to_write = base64.b64decode(encoded)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid data URL format.")
 
         async with aiofiles.open(file_path, mode='wb') as f:
-            await f.write(data)
+            await f.write(data_to_write)
 
-        return {"message": "Image file saved successfully.", "path": file_path}
+        return {"message": "File saved successfully.", "path": file_path}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save image file: {str(e)}")
+        # Catch-all for other potential errors like file system issues
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
