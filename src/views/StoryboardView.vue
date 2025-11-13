@@ -193,9 +193,10 @@
             <div v-if="row.videoId">
               <p>ID: {{ row.videoId }}</p>
               <p>Status: {{ row.videoStatus }}</p>
-              <el-progress :percentage="row.videoProgress" v-if="row.videoStatus !== 'completed'" />
+              <el-progress :percentage="row.videoProgress" v-if="row.videoStatus !== 'completed' && row.videoStatus !== 'success' && row.videoStatus !== 'failed' && row.videoStatus !== 'error' && row.videoStatus !== 'fail'" />
               <a :href="row.videoUrl" target="_blank" v-if="row.videoUrl">查看视频</a>
-              <el-button size="small" @click="checkVideoStatus($index)" :loading="videoGenerationLoading[$index]">刷新状态</el-button>
+              <el-button size="small" @click="checkVideoStatus($index)" :loading="videoGenerationLoading[$index]" v-if="!row.videoUrl && row.videoStatus !== 'failed' && row.videoStatus !== 'error' && row.videoStatus !== 'fail'">刷新状态</el-button>
+              <el-button size="small" @click="regenerateVideoForScene($index)" :loading="videoGenerationLoading[$index]" v-if="row.videoStatus === 'failed' || row.videoStatus === 'error' || row.videoStatus === 'fail'">重新生成</el-button>
             </div>
             <el-button v-else size="small" @click="generateVideoForScene($index)" :loading="videoGenerationLoading[$index]">生成视频</el-button>
           </template>
@@ -586,6 +587,15 @@ const generateImageForScene = async (sceneIndex) => {
 const regenerateImageForScene = async (sceneIndex) => {
   scenes.value[sceneIndex].images = [];
   return await generateImageForScene(sceneIndex);
+}
+
+const regenerateVideoForScene = async (sceneIndex) => {
+  const scene = scenes.value[sceneIndex];
+  scene.videoId = null;
+  scene.videoStatus = '';
+  scene.videoProgress = 0;
+  scene.videoUrl = null;
+  await generateVideoForScene(sceneIndex);
 }
 
 const generateAllImages = async () => {
