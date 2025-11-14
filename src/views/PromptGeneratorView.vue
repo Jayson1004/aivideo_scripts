@@ -35,6 +35,9 @@
           <el-select v-model="form.model" placeholder="选择语言模型" style="width: 100%;">
             <el-option-group label="OpenAI">
               <el-option label="GPT-5 (2025-08-07)" value="gpt-5-2025-08-07"></el-option>
+              <el-option label="GPT-5.1-HIGH" value="gpt-5.1-high"></el-option>
+
+              
               <el-option label="GPT-4" value="gpt-4"></el-option>
             </el-option-group>
             <el-option-group label="Claude">
@@ -51,6 +54,7 @@
             <el-radio label="1">根据主题生成</el-radio>
             <el-radio label="2">改写现有故事</el-radio>
             <!-- <el-radio label="3">从YouTube链接生成</el-radio> -->
+            <el-radio label="4">文生视频提示词</el-radio>
           </el-radio-group>
         </el-form-item>
         <!-- <el-form-item v-if="form.generate_story_type === '3'" label="YouTube链接" required>
@@ -73,7 +77,32 @@
         <el-form-item v-if="form.generate_story_type === '2'" label="原始故事" required>
           <el-input v-model="form.original_story_text" type="textarea" :rows="8" placeholder="请在此处粘贴您想要改写的故事文本" />
         </el-form-item>
-        <el-form-item label="故事长度">
+        <el-form-item v-if="form.generate_story_type === '4'" label="视频类型">
+          <el-select v-model="form.ttv_story_type" placeholder="选择故事类型">
+            <el-option v-for="story in storysBase" :key="story.title" :label="story.title" :value="story.title" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="form.generate_story_type === '4'" label="视频设置">
+          <el-select v-model="videoProvider" placeholder="视频提供方" style="width:160px; margin-right: 8px;">
+            <el-option label="yunwu-sora" value="yunwu-sora" />
+            <el-option label="kie-sora" value="kie-sora" />
+          </el-select>
+          <el-input v-if="videoProvider=='kie-sora'" v-model="kietoken" placeholder="kie token" style="width:300px" />
+          <el-select v-model="videoSize" placeholder="视频尺寸" style="width:160px; margin-right: 8px;">
+            <el-option label="9:16" value="9x16" />
+            <el-option label="16:9" value="16x9" />
+            <el-option label="1:1" value="1x1" />
+            <el-option label="4:3" value="4x3" />
+            <el-option label="3:4" value="3x4" />
+          </el-select>
+          <el-select v-model="videoSeconds" placeholder="视频时长" style="width:120px; margin-right: 8px;">
+            <el-option label="10s" value="10" />
+            <el-option label="15s" value="15" />
+          </el-select>
+          <el-switch v-model="videoIsPrivate" active-text="私有" style="margin-right: 8px;"/>
+          <el-switch v-model="videoWatermark" active-text="水印"/>
+        </el-form-item>
+        <el-form-item label="故事长度" v-if="form.generate_story_type === '1' || form.generate_story_type === '2'">
           <el-input-number v-model="form.story_length" :min="100" :max="10000" :step="100" />
           <span style="margin-left:8px; color:#666;">字</span>
         </el-form-item>
@@ -83,10 +112,55 @@
       </el-form>
       <div style="display:flex; gap:12px; justify-content: center; margin-top: 20px;">
         <el-button type="primary" size="large" :loading="loading" @click="generateStory">
-          {{ form.generate_story_type === '1' ? '生成故事' : (form.generate_story_type === '2' ? '改写故事' : '生成故事') }}
+          {{ form.generate_story_type === '1' ? '生成故事' : (form.generate_story_type === '2' ? '改写故事' : (form.generate_story_type === '3' ? '生成故事' : '生成提示词')) }}
+        </el-button>
+        <el-button v-if="form.generate_story_type === '4' && form.generated_story_text" type="success" size="large" :loading="videoLoading" @click="generateVideo">
+          生成视频
         </el-button>
       </div>
+      <div v-if="form.generate_story_type === '4' && videoId" style="margin-top: 20px; text-align: center;">
+        <p>视频ID: {{ videoId }}</p>
+        <el-tooltip :content="videoErrorMessage" placement="top" v-if="videoErrorMessage">
+          <p style="color: red;">状态: {{ videoStatus }}</p>
+        </el-tooltip>
+        <p v-else>状态: {{ videoStatus }}</p>
+        <el-progress :percentage="videoProgress" v-if="videoStatus !== 'completed' && videoStatus !== 'success' && videoStatus !== 'failed' && videoStatus !== 'error' && videoStatus !== 'fail'" style="width: 300px; margin: 10px auto;" />
+        <a :href="generatedVideoUrl" target="_blank" v-if="generatedVideoUrl">查看视频</a>
+        <el-button size="small" @click="checkVideoStatus()" :loading="videoLoading" v-if="!generatedVideoUrl && videoStatus !== 'failed' && videoStatus !== 'error' && videoStatus !== 'fail'">刷新状态</el-button>
+        <el-button size="small" @click="generateVideo" :loading="videoLoading" v-if="videoStatus === 'failed' || videoStatus === 'error' || videoStatus === 'fail'">重新生成</el-button>
+      </div>
     </el-card>
+
+    <!-- Video Result Dialog -->
+    <el-dialog v-model="showVideoResultDialog" title="视频生成完成" width="60%">
+      <div v-if="generatedVideoUrl">
+        <video :src="generatedVideoUrl" controls style="width: 100%;"></video>
+      </div>
+      <el-form :model="videoForm" label-width="100px" style="margin-top: 20px;">
+        <el-form-item label="视频标题" required>
+          <el-input v-model="videoForm.title" />
+        </el-form-item>
+        <el-form-item label="视频描述">
+          <el-input v-model="videoForm.description" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-form-item label="视频缩略图">
+          <el-upload
+            action="#"
+            list-type="picture-card"
+            :auto-upload="false"
+            :on-change="handleThumbnailChange"
+            :limit="1"
+          >
+            <el-icon><Plus /></el-icon>
+          </el-upload>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showVideoResultDialog = false">关闭</el-button>
+        <el-button type="primary" @click="saveVideoDetails">保存</el-button>
+      </template>
+    </el-dialog>
+
 
     <!-- Step 2: Storyboard Generation -->
     <el-card style="margin-top:12px;">
@@ -173,7 +247,8 @@ import { ref, onMounted,watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
-import { PromptAPI, FileAPI } from '../services/api';
+import { PromptAPI, FileAPI, VideosAPI } from '../services/api';
+import { Plus } from '@element-plus/icons-vue';
 
 const router = useRouter()
 
@@ -182,12 +257,35 @@ const activeStep = ref(0)
 const form = ref(getInitialFormState())
 const loading = ref(false)
 const generatedScenes = ref([])
-const showResultDialog = ref(true)
+const showResultDialog = ref(false)
 const showTxtToScene = ref(false)
 const editableJsonString = ref('')
 const showHistoryDialog = ref(false)
 const savedStories = ref([])
 const currentStoryKey = ref(null)
+
+// Video Generation State
+const videoLoading = ref(false);
+const showVideoResultDialog = ref(false);
+const generatedVideoUrl = ref('');
+const videoForm = ref({
+  title: '',
+  description: '',
+  thumbnail: null,
+});
+const videoProvider = ref('yunwu-sora');
+const videoSize = ref('9x16');
+const videoSeconds = ref('10');
+const videoIsPrivate = ref(true);
+const videoWatermark = ref(false);
+const kietoken = ref(localStorage.getItem('kiee_token') || '');
+const videoId = ref(null);
+const videoStatus = ref('');
+const videoProgress = ref(0);
+const videoErrorMessage = ref('');
+const videoPollingTimer = ref(null);
+const videoRetryCount = ref(0);
+
 const styleOptions = [
 { label: '无风格', value: '' },
   { label: '3D卡通', value: 'Cartoon Games 3D' },
@@ -198,16 +296,158 @@ const styleOptions = [
   { label: '写实', value: 'photorealistic' },
   { label: 'Roblox像素风', value: 'Roblox pixel' },
 ]
+
+const storyTempletes = [
+  {
+    type: 'The_Guardian_Moment',
+    content: `
+      1. 故事结构与叙事弧 (Three-Act Micro-Structure)
+      开端 (Exposition): 静默的序幕
+      背景引入: 故事始于一个极其普通、平静的日常场景。叙事视角通常是客观、被动的（如监控录像、旁观者视角、日记记录等），暗示着一种“客观记录”的真实感。
+      角色与情境: 一个被守护者 (The Vulnerable) 正在进行无害的日常活动，他们对即将到来的危险完全不知情。一位守护者 (The Protector) 安静地存在于场景中，最初状态是平和或不显眼的。
+      悬念营造: 客观的记录视角本身创造了悬念——观众知道某些不寻常的事件即将发生并被记录下来。
+      发展 (Rising Action): 威胁的降临
+      关键事件: 一个突发的、致命的威胁 (The Threat) 毫无征兆地出现。这个威胁可以是任何形式：物理危险、敌对生物、意外事故等。
+      冲突升级: 守护者比被守护者先一步感知到危险。其行为模式从平静瞬间切换为极度的警觉和果断。核心冲突从“潜在危险”正式升级为“迫在眉-睫的威胁 vs. 守护者的紧急反应”。
+      高潮 (Climax): 决定的瞬间
+      转折点/矛盾爆发: 在威胁触及被守护者的前一刹那，守护者采取了决定性的、通常是暴力的物理行动——猛力将对方推开、扑倒、拉走或阻挡在自己身后。这是“拯救”的核心瞬间，是整个叙事中张力最强的时刻。
+      最紧张时刻: 画面或叙述同时呈现“成功的规避”与“威胁的命中”。（例如：被守护者刚被扑倒，致命物体就砸在他/她原来的位置上）。这种强烈的时空对比，营造出极致的“千钧一发”的紧张感。
+      结局 (Falling Action & Resolution): 劫后余波
+      高潮之后: 被守护者从震惊中反应过来，意识到自己刚刚与死神擦肩而过。威胁源已被消除或被守护者成功阻挡。
+      问题解决: 直接的生命威胁被解除，核心目标（生存）达成。
+      角色状态变化: 被守护者的状态从“无知”变为“震惊与感激”。守护者则从“战斗/警觉”模式中放松下来，通常会得到被守护者的感激与确认。
+      结局类型: 整个事件构成一个封闭式的、完整的英雄行为单元，有力地传达了核心主题。
+      2. 核心主题与情感基调
+      核心主题: 英雄主义、守护本能、忠诚、牺牲、个体之间的情感纽带、日常生活中潜藏的未知危险。
+      情感基调: 整体氛围由紧张、悬疑、惊险，最终导向感动、温暖、震撼与安心。
+      情感弧光: 平淡 -> 恐惧 -> 紧张 -> 释放 -> 感动。
+      3. 角色原型 (Character Archetypes)
+      守护者 (英雄):
+      核心动机是保护弱小或自己珍视的对象。
+      性格特点：警觉、勇敢、果断、无私。
+      被守护者 (需要拯救者):
+      通常是脆弱、无助、对危险后知后觉的符号化角色，其存在是为了凸显守护者的价值和威胁的严重性。
+      威胁 (冲突源):
+      代表“突发的厄运”或敌对势力，是推动剧情和考验守护者的外部力量。
+      角色关系: 明确的“守护者”与“被守护者”的权力与信息不对等关系。这些角色通常是静态的，其功能是高效地完成“英雄拯救”的叙事模式。
+      4. 冲突与张力设计
+      主要冲突: 外部冲突——“守护者 vs. 致命威胁”，本质是一场与时间的赛跑。
+      张力来源: 信息差（戏剧性反讽）。观众/读者和守护者知道危险的存在，但被守护者不知道。当威胁步步紧逼，而被守护者毫无反应时，张力达到顶点。
+      关键反转: 每个故事的核心反转在于，守护者最初看似“突兀”、“粗鲁”甚至“有攻击性”的行为，其真实意图在下一秒被揭示为救命之举。这种认知上的颠覆带来了强烈的情感冲击。
+      5. 叙事技巧
+      节奏控制:
+      整体节奏: 极快，省略所有不必要的铺垫，直击高潮。
+      单元节奏: 每个事件内部遵循“慢 -> 极快 -> 慢”的节奏模式（平静日常 -> 瞬间爆发 -> 劫后平静）。
+      视角风格:
+      采用**“伪纪录片/客观视角” (Found Footage/Objective POV) 风格**，旨在营造一种未经修饰的、客观的“真实感”，让观众感觉自己是事件的见证者。
+      视觉符号: 可以通过叠加特定元素（如时间戳、摄像头数据、新闻标题）来强化这种“真实记录”的错觉。
+      开头与结尾:
+      开头: 直接以一个高能的拯救片段开场，迅速抓住观众注意力并确立主题。
+      结尾: 在一个感人的拯救事件后戛然而止，将累积的情感（感动、震撼）留给观众，引发对“守护”这一主题的思考。`
+  }
+]
+
+const constans = `
+1. 守护者 (The Protector):
+动物:
+家养: 猫、马、鸟、甚至是一条鱼（例如，通过异常行为示警）。
+野生: 狼、海豚、大猩猩、老鹰。
+人类:
+亲人: 父母、兄妹、祖父母。
+职业: 保镖、士兵、警察、消防员。
+陌生人: 一个沉默的路人、一个看似冷漠的邻居。
+科幻/奇幻生物:
+科技: 忠诚的机器人、AI管家、一辆有自我意识的汽车。
+奇幻: 魔法生物、守护精灵、幽灵、树精。
+2. 被守护者 (The Vulnerable):
+人类: 婴儿、儿童、老人、残障人士、一个分心的成年人（比如低头看手机）。
+动物: 一只幼崽、一个受伤的同伴。
+关键物品: 一个即将被摧毁的、承载希望的物品（如救命的血清、重要的信息芯片）。
+3. 威胁 (The Threat):
+物理/环境危险:
+高空坠物: 树枝、广告牌、落石、建筑材料。
+交通意外: 失控的汽车、自行车、火车。
+自然灾害: 塌方、小型雪崩、断裂的冰面、巨浪。
+结构坍塌: 倒塌的书架、破碎的玻璃、失火。
+生物/人为威胁:
+攻击者: 冲撞的公牛、攻击性的蛇、捕食者。
+敌对人类: 小偷、绑架者、袭击者。
+科幻/奇幻威胁:
+科技: 失控的无人机、恶意的AI攻击、能量爆炸。
+奇幻: 飞来的咒语、一支暗箭、一个突然出现的陷阱。
+二、场景与情境变量 (The Setting & Context Variables)
+这决定了故事发生的“何时”与“何地”。
+1. 场景 (The Setting):
+室内: 客厅、厨房、仓库、实验室、图书馆、工厂车间。
+室外: 公园、街道、悬崖边、森林里、海滩上、建筑工地。
+特殊环境: 太空站、外星球、魔法城堡、古代战场。
+2. 日常活动 (The Mundane Activity):
+静态: 睡觉、阅读、画画、坐在长椅上发呆。
+动态: 玩耍、散步、做饭、修理东西、进行实验。
+三、拯救行为与叙事风格变量 (The Action & Style Variables)
+这决定了故事的“如何”被展现。
+1. 守护者的关键行动 (The Decisive Action):
+推/撞: 猛力将对方推开。
+拖/拉: 将对方从危险区域拖走。
+格挡/承受: 用自己的身体挡住威胁。
+预警/吸引注意: 发出巨大的声响或制造动静来警示被守护者或引开威胁。
+拦截: 直接攻击或拦截威胁本身（如抓住飞来的物体）。
+2. 叙事媒介/视角 (The Narrative Medium/POV):
+视频记录: 监控摄像头、手机视频、行车记录仪、无人机镜头、电视新闻画面。
+静态图像: 一系列抓拍的连续照片。
+文字记述: 目击者的日记、新闻报道、官方事故报告。
+第一人称回忆: 由被守护者或守护者（如果它能交流）在事后回忆讲述。
+如何套用：组合示例
+通过将以上变量进行排列组合，你就可以生成全新的故事：
+示例1 (科幻版):
+守护者: 家庭服务型机器人 (AI Butler)。
+被守护者: 正在进行危险化学实验的科学家。
+威胁: 试管即将发生爆炸。
+场景: 高科技实验室。
+关键行动: 机器人用其金属手臂瞬间将科学家扑倒并用身体护住。
+叙事媒介: 实验室的监控录像。
+示例2 (奇幻版):
+守护者: 一只不起眼的森林小精灵。
+被守护者: 在森林里采蘑菇的小女孩。
+威胁: 一头隐藏在暗处的、即将扑出的野狼。
+场景: 魔法森林。
+关键行动: 小精灵瞬间施法，让一根藤蔓绊倒了小女孩，使她躲过了致命一击。
+叙事媒介: 一位老奶奶讲给孙辈的传说故事。
+示例3 (都市现实版):
+守护者: 一个平日里沉默寡言的邻居。
+被守护者: 一个戴着耳机过马路的年轻人。
+威胁: 一辆闯红灯的失控卡车。
+场景: 城市十字路口。
+关键行动: 邻居放弃手中的购物袋，冲上去将年轻人猛力拉回人行道。
+叙事媒介: 行车记录仪的画面。
+`
+const storysBase = [{
+  title: '狗英雄救人',
+  hero:'狗',
+  content: `1. 故事结构与叙事弧 开端 (Exposition): 背景引入: 视频片段都始于一个平静的日常场景（院子、走廊、客厅、厨房等等），通常采用固定的监控摄像头视角。 角色与情境: 一个弱势角色（通常是独处的女性或婴儿）正在进行无害的日常活动（坐着休息、玩耍等等），他们对即将到来的危险毫不知情。一只狗（通常是德国牧羊犬、金毛寻回犬等）安静地陪伴在旁。 引子/悬念: 监控摄像头的视角本身就暗示着“将有不寻常的事件被记录下来”，营造了潜在的紧张感。
+   发展 (Rising Action): 关键事件: 一个突发的、致命的威胁出现。这可能是从天而降的重物（保险箱等等），或是突然闯入的危险动物（野牛、鹰、野猪）等等。 冲突引入与升级: 狗比人类先一步感知到危险。它的行为模式从平静瞬间切换为极度的警觉和果断，冲突从“潜在的危险”升级为“迫在眉睫的威胁 vs. 狗的紧急反应”。 高潮 (Climax): 转折点/矛盾爆发: 在威胁触及人类的前一刹那，狗采取了决定性的物理行动——猛力将人扑倒、推开或拖离危险区域，如果是儿童，是符合常理的保护行为。这是“拯救”的瞬间，是整个叙事中张力最强的时刻。 
+   最紧张时刻: 画面同时呈现了“成功的规避”与“危险的降临”（例如，人刚被扑倒，保险箱就砸在原来的位置上，危险源头和人物位置要能对上，人物位置的变化才使得没有收到伤害），形成了强烈的视觉冲击和“千钧一发”的紧张感。 结局 (Falling Action & Resolution): 高潮后: 人类从震惊中反应过来，意识到自己刚刚躲过一劫。危险源已被消除或被狗阻挡。 问题解决: 直接的生命威胁被成功解除。 角色状态变化: 人类从“无知”变为“震惊和感激”，狗则从“守护者”的角色中放松下来，通常会得到主人的安抚和感谢。 结局类型: 视频片段都是一个完整的、封闭式的英雄事件。 
+   余韵: 强化了“狗是人类忠诚守护者”的核心信息，留给观众感动和震撼。 整体结构类型: 这是一个主题式片段 (Thematic Compilation)。遵循着一个极其紧凑的微型三幕式结构（铺垫 -> 冲突与拯救 -> 解脱），并且是严格的线性叙事。 2. 核心主题与情感基调 核心主题: 动物的英雄主义、忠诚、守护本能、人与动物之间深厚的情感纽带、日常生活中潜藏的危险。 情感基调: 整体上是紧张、悬疑、惊险，并最终导向感动、温暖、励志和震撼。 情感变化: 从平淡的日常感，迅速拉升至极度的紧张和恐惧，最后在高潮的拯救中释放，转化为强烈的感动和安心。
+    3. 角色塑造 主要角色: 狗 (英雄/守护者): 核心动机是保护主人/弱小。性格特点是警觉、勇敢、果断、无私、忠诚。 人类 (被守护者): 通常是脆弱、无助、对危险毫无察觉的符号化角色。 威胁 (冲突源): 可能是无意识的物理危险（重力、意外），也可能是有意识的侵略者（野生动物），代表着“突发的厄运”。 人物关系: 明确的守护者与被守护者的关系。 角色弧光: 所有角色都是原型/静态角色 (Archetypes/Static Characters)，其存在是为了高效地完成“英雄拯救”的叙事模式，没有个人成长。 
+    4. 冲突与张力 主要冲突: 核心是外部冲突——“守护者（狗） vs. 致命威胁”，其本质是一场与时间的赛跑，目标是保护脆弱的第三方（人类）。 冲突升级: 张力来源于“信息差”——观众和狗知道危险，但画面中的人类不知道。当威胁越来越近，而人类毫无反应时，张力达到顶点。 关键反转: 每个片段的“反转”在于，狗最初看似“突兀”或“攻击性”的行为（如猛扑主人），其真实意图在下一秒被揭示为救命之举。 
+    5. 节奏与时间线 整体节奏: 极快。视频由一系列高潮时刻剪辑而成，几乎没有冗余的铺垫。 节奏变化: 每个片段内部遵循“慢 -> 极快 -> 慢”的节奏模式（平静的日常 -> 瞬间的爆发式动作 -> 劫后余生的平静）。 时间线处理: 所有片段均为顺叙。视频中出现的未来日期（如2025年）是一个关键特征，暗示这些是AI生成的概念性或虚构性内容。 
+    6. 画面风格与视觉元素 整体视觉风格: 典型的**“监控录像/家庭摄像头” (CCTV/Found Footage) 风格**。这种风格旨在营造一种未经修饰的、客观的“真实感”。 关键场景特点: 色调/光影: 通常是自然光，色彩偏向写实，有时会带有监控设备的低饱和度或轻微的噪点。 构图: 多为固定的广角镜头，视角单一，缺乏电影运镜，以此来模仿真实监控的记录方式。 象征性视觉符号: 监控画面叠加层 (REC, CAM, Timestamp): 强化了“事件是真实被记录下来”的错觉，是风格的核心元素。 狗: 忠诚与守护的终极象征。 婴儿: 纯洁、无助与未来的象征，使其被拯救的故事更具情感冲击力。 
+    7. 开头与结尾的技巧 开头吸引力: 视频直接以一个高能的拯救片段开场，没有前言，迅速将观众带入紧张刺激的氛围中，并确立了整个视频的主题。 结尾处理: 作为集锦视频，它没有统一的叙事结尾。通常在最后一个感人的片段结束后淡出，将累积的情感（感动、震撼）留给观众，引发对动物伙伴的珍视和思考。 `
+}]
 const script_topic = ref('')
 watch(() => form.value.token, (t) => {
   localStorage.setItem('apicore_token', t);
+})
+watch(kietoken, (k)=>{
+  localStorage.setItem('kiee_token', k)
 })
 // --- Helper Functions ---
 function getInitialFormState() {
   return {
     topic: '',
     style: 'photorealistic',
-    language: 'chinese',
+    ttv_story_type: '',
+    language: 'english',
     story_type: '科幻',
     story_length: 800,
     generate_story_type: '1',
@@ -283,11 +523,27 @@ const generateStory = async () => {
     ElMessage.warning('请输入YouTube链接');
     return;
   }
+  if (sourceType === '4' && !form.value.ttv_story_type.trim()) {
+    ElMessage.warning('请选择视频类型');
+    return;
+  }
 
   loading.value = true;
   form.value.generated_story_text = '';
   generatedScenes.value = [];
   activeStep.value = 0;
+
+  // Reset video state
+  videoId.value = null;
+  videoStatus.value = '';
+  videoProgress.value = 0;
+  videoErrorMessage.value = '';
+  generatedVideoUrl.value = '';
+  videoRetryCount.value = 0;
+  if (videoPollingTimer.value) {
+    clearTimeout(videoPollingTimer.value);
+    videoPollingTimer.value = null;
+  }
 
   try {
     const basePrompt = `
@@ -618,6 +874,36 @@ const generateStory = async () => {
 
         # 输出
         请直接输出完整的故事文本，不要包含标题、标签或任何解释性文字。
+      `;
+    } else if (sourceType === '4') {
+      const selectedStory = storysBase.find(story => story.title === form.value.ttv_story_type);
+      if (!selectedStory) {
+        ElMessage.error('未找到选定的视频类型故事。');
+        loading.value = false;
+        return;
+      }
+      prompt = `
+        # 角色
+        你是一位顶级的Sora文生视频提示词专家，精通如何创造出高质量、可直接用于Sora模型的视频生成提示词。
+
+        # 任务
+        根据提供的故事要求、类型、视频时长和额外要求，为Sora模型创作一个详细的文生视频提示词。
+
+        # 故事信息
+        - 故事类型: ${selectedStory.title}
+        - 视频时长: ${videoSeconds.value} 秒
+        - 故事参考要求: ${selectedStory.content}
+        - 合理发挥你的想象发散场景和动作，符合创作高质量爆款视频的逻辑
+
+        # 要求
+        - 提示词必须高度描述性，包含场景、人物、动作、情感、光线、构图、风格等所有视觉元素，使用简洁高效高质量的语言描述。
+        - 确保提示词能够引导Sora生成一个连贯、富有电影感的视频。
+        - 语言: ${form.value.language}
+        - 额外要求: ${form.value.additional_requirements || '无'}
+        - 如果是婴儿版本将安全合理地展现守护行为而不涉及真实危险
+        - 如果涉及到人物说话，都用英语
+        # 输出
+        请直接输出Sora文生视频提示词，不要包含任何解释性文字或Markdown代码块。
       `;
     }
     const result = await PromptAPI.apicoreGenerateTxt(prompt, form.value.token, form.value.model);
@@ -960,6 +1246,18 @@ const clearForm = () => {
   generatedScenes.value = [];
   activeStep.value = 0;
   currentStoryKey.value = null;
+
+  // Reset video state
+  videoId.value = null;
+  videoStatus.value = '';
+  videoProgress.value = 0;
+  videoErrorMessage.value = '';
+  generatedVideoUrl.value = '';
+  videoRetryCount.value = 0;
+  if (videoPollingTimer.value) {
+    clearTimeout(videoPollingTimer.value);
+    videoPollingTimer.value = null;
+  }
 };
 
 // --- Export and Navigation ---
@@ -1022,6 +1320,174 @@ const useInStoryboard = () => {
   router.push('/storyboard');
 };
 
+// --- Video Generation Functions ---
+const generateVideo = async () => {
+  if (!form.value.generated_story_text.trim()) {
+    ElMessage.warning('请先生成文生视频提示词');
+    return;
+  }
+
+  videoLoading.value = true;
+  videoRetryCount.value = 0;
+  try {
+    const prompt = form.value.generated_story_text;
+    let data;
+
+    if (videoProvider.value === 'yunwu-sora') {
+      data = await VideosAPI.generateYunwuVideo(
+        prompt,
+        videoSeconds.value,
+        null, // No base image for now
+        videoSize.value,
+        videoWatermark.value,
+        videoIsPrivate.value,
+        form.value.token
+      );
+      videoId.value = data.id;
+      videoStatus.value = data.status;
+      videoProgress.value = data.progress;
+    } else if (videoProvider.value === 'kie-sora') {
+      const aspectRatioMap = {
+        '9x16': 'portrait',
+        '16x9': 'landscape',
+        '1x1': 'square',
+        '4x3': 'landscape',
+        '3x4': 'portrait',
+      };
+      const aspectRatio = aspectRatioMap[videoSize.value] || 'landscape';
+      data = await VideosAPI.generateKieVideo(
+        prompt,
+        videoSeconds.value,
+        aspectRatio,
+        !videoWatermark.value,
+        kietoken.value
+      );
+      if (data.code === 200) {
+        videoId.value = data.data.taskId;
+        videoStatus.value = 'queued';
+        videoProgress.value = 0;
+      } else {
+        throw new Error(data.message || 'Failed to create video task');
+      }
+    }
+
+    ElMessage.success('视频生成任务已创建，正在后台处理...');
+    checkVideoStatus(true);
+
+  } catch (e) {
+    console.error(e);
+    ElMessage.error(`视频生成失败: ${e.message}`);
+    videoLoading.value = false;
+  }
+};
+
+const checkVideoStatus = async (isPolling = false) => {
+  if (!videoId.value) {
+    ElMessage.warning('没有视频ID');
+    return;
+  }
+
+  if (videoPollingTimer.value) {
+    clearTimeout(videoPollingTimer.value);
+    videoPollingTimer.value = null;
+  }
+
+  videoRetryCount.value++;
+
+  try {
+    let data;
+    if (videoProvider.value === 'yunwu-sora') {
+      const statusResponse = await VideosAPI.getYunwuVideoStatus(videoId.value, form.value.token);
+      videoStatus.value = statusResponse.status;
+      videoProgress.value = statusResponse.progress || 0;
+      videoRetryCount.value = 0; // Reset retry count on success
+
+      if (statusResponse.status === 'completed') {
+        if (statusResponse.video_url) {
+          generatedVideoUrl.value = statusResponse.video_url;
+          ElMessage.success('视频已生成');
+          showVideoResultDialog.value = true;
+          videoLoading.value = false;
+
+          const now = new Date();
+          const filename = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}.mp4`;
+          await FileAPI.saveImage(form.value.ttv_story_type, filename, generatedVideoUrl.value);
+          ElMessage.info(`视频已保存到文件夹: ${form.value.ttv_story_type}`);
+
+        } else {
+          ElMessage.error('视频生成成功，但未获取到视频URL。');
+          videoLoading.value = false;
+        }
+      } else if (statusResponse.status === 'failed' || statusResponse.status === 'error') {
+        videoErrorMessage.value = statusResponse.error?.message || statusResponse.status;
+        ElMessage.error(`视频生成失败: ${videoErrorMessage.value}`);
+        videoLoading.value = false;
+      } else {
+        if (isPolling) {
+          videoPollingTimer.value = setTimeout(() => checkVideoStatus(true), 10000);
+        }
+      }
+    } else if (videoProvider.value === 'kie-sora') {
+      data = await VideosAPI.getKieVideoStatus(videoId.value, kietoken.value);
+      videoRetryCount.value = 0; // Reset retry count on success
+      if (data.code === 200) {
+        const videoData = data.data;
+        videoStatus.value = videoData.state;
+        if (videoData.state === 'success') {
+          videoProgress.value = 100;
+          const result = JSON.parse(videoData.resultJson);
+          if (result.resultUrls && result.resultUrls.length > 0) {
+            generatedVideoUrl.value = result.resultUrls[0];
+            ElMessage.success('视频已生成');
+            showVideoResultDialog.value = true;
+            videoLoading.value = false;
+
+            const now = new Date();
+            const filename = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}.mp4`;
+            await FileAPI.saveImage(form.value.ttv_story_type, filename, generatedVideoUrl.value);
+            ElMessage.info(`视频已保存到文件夹: ${form.value.ttv_story_type}`);
+          }
+        } else if (videoData.state === 'fail') {
+          videoErrorMessage.value = videoData.failMsg;
+          ElMessage.error(`视频生成失败: ${videoErrorMessage.value}`);
+          videoLoading.value = false;
+        } else {
+          if (isPolling) {
+            videoPollingTimer.value = setTimeout(() => checkVideoStatus(true), 10000);
+          }
+        }
+      } else {
+        throw new Error(data.message || 'Failed to get video status');
+      }
+    }
+  } catch (e) {
+    console.error(e);
+    if (videoRetryCount.value < 3) {
+      ElMessage.warning(`获取视频状态失败，正在进行第 ${videoRetryCount.value} 次重试...`);
+      videoPollingTimer.value = setTimeout(() => checkVideoStatus(true), 5000);
+    } else {
+      videoErrorMessage.value = e.message;
+      ElMessage.error(`视频状态更新失败: ${e.message}`);
+      videoLoading.value = false;
+    }
+  }
+};
+
+const handleThumbnailChange = (file) => {
+  videoForm.value.thumbnail = file.raw;
+};
+
+const saveVideoDetails = () => {
+  if (!videoForm.value.title) {
+    ElMessage.warning('请输入视频标题');
+    return;
+  }
+  // Here you would typically send the video details to a backend
+  console.log('Saving video details:', videoForm.value);
+  ElMessage.success('视频详情已保存（模拟）');
+  showVideoResultDialog.value = false;
+};
+
 // --- JSON Parsing ---
 function sanitizeJsonText(text) {
   if (typeof text !== 'string') return text;
@@ -1065,6 +1531,7 @@ function sanitizeJsonText(text) {
   s = s.replace(/,\s*([\}\]])/g, '$1');
   return s.trim();
 }
+
 
 const parseMarkdownJson = (md) => {
   if (md && typeof md === 'object') return md;

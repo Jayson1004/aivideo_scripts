@@ -158,6 +158,7 @@ export const VideosAPI = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'multipart/form-data',
       },
+      timeout: 600000, // 10 minutes timeout
     });
 
     return data;
@@ -170,6 +171,7 @@ export const VideosAPI = {
       headers: {
         'Authorization': `Bearer ${token}`,
       },
+      timeout: 600000, // 10 minutes timeout
     });
 
     return data; // Return the detail object which contains status and progress

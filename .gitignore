@@ -25,3 +25,4 @@ dist-ssr
 storyboards
 backend/__pycache__
 backend/.venv
+sora_shorts/
