@@ -28,14 +28,11 @@
         </div>
       </template>
       <el-form :model="form" label-width="100px" style="max-width: 800px; margin:auto;">
-        <el-form-item label="云雾API Key">
-          <el-input v-model="form.token" placeholder="API_KEY" style="width:400px" />
-        </el-form-item>
         <el-form-item label="模型选择">
           <el-select v-model="form.model" placeholder="选择语言模型" style="width: 100%;">
             <el-option-group label="OpenAI">
               <el-option label="GPT-5 (2025-08-07)" value="gpt-5-2025-08-07"></el-option>
-              <el-option label="GPT-5.1-HIGH" value="gpt-5.1-high"></el-option>
+              <el-option label="GPT-5.1" value="gpt-5.1"></el-option>
 
               
               <el-option label="GPT-4" value="gpt-4"></el-option>
@@ -45,7 +42,7 @@
               <el-option label="Claude Sonnet 4.0" value="claude-sonnet-4-20250514"></el-option>
               <el-option label="Claude Opus 4.1" value="claude-opus-4-1-20250805"></el-option>
             </el-option-group>
-            
+            <!-- gemini-3-pro-preview-thinking -->
           </el-select>
         </el-form-item>
        
@@ -53,13 +50,13 @@
           <el-radio-group v-model="form.generate_story_type" @change="activeStep = 0">
             <el-radio label="1">根据主题生成</el-radio>
             <el-radio label="2">改写现有故事</el-radio>
-            <!-- <el-radio label="3">从YouTube链接生成</el-radio> -->
+            <el-radio label="3">从YouTube链接生成</el-radio>
             <el-radio label="4">文生视频提示词</el-radio>
           </el-radio-group>
         </el-form-item>
-        <!-- <el-form-item v-if="form.generate_story_type === '3'" label="YouTube链接" required>
+        <el-form-item v-if="form.generate_story_type === '3'" label="YouTube链接" required>
           <el-input v-model="form.youtube_link" placeholder="请输入YouTube视频链接" />
-        </el-form-item> -->
+        </el-form-item>
         <el-form-item v-if="form.generate_story_type === '1'" label="故事主题" required>
           <el-input v-model="form.topic" placeholder="例如：一个机器人学习如何去爱的故事" />
         </el-form-item>
@@ -84,10 +81,9 @@
         </el-form-item>
         <el-form-item v-if="form.generate_story_type === '4'" label="视频设置">
           <el-select v-model="videoProvider" placeholder="视频提供方" style="width:160px; margin-right: 8px;">
-            <el-option label="yunwu-sora" value="yunwu-sora" />
-            <el-option label="kie-sora" value="kie-sora" />
+            <el-option label="Yunwu" value="yunwu" />
+            <el-option label="Kie" value="kie" />
           </el-select>
-          <el-input v-if="videoProvider=='kie-sora'" v-model="kietoken" placeholder="kie token" style="width:300px" />
           <el-select v-model="videoSize" placeholder="视频尺寸" style="width:160px; margin-right: 8px;">
             <el-option label="9:16" value="9x16" />
             <el-option label="16:9" value="16x9" />
@@ -246,11 +242,12 @@
 import { ref, onMounted,watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import axios from 'axios'
-import { PromptAPI, FileAPI, VideosAPI } from '../services/api';
+import { PromptAPI, FileAPI, VideosAPI, BookwormAPI } from '../services/api';
 import { Plus } from '@element-plus/icons-vue';
+import { useSettings } from '../composables/useSettings';
 
 const router = useRouter()
+const { settings } = useSettings();
 
 // State
 const activeStep = ref(0)
@@ -273,12 +270,11 @@ const videoForm = ref({
   description: '',
   thumbnail: null,
 });
-const videoProvider = ref('yunwu-sora');
+const videoProvider = ref('yunwu');
 const videoSize = ref('9x16');
 const videoSeconds = ref('10');
 const videoIsPrivate = ref(true);
 const videoWatermark = ref(false);
-const kietoken = ref(localStorage.getItem('kiee_token') || '');
 const videoId = ref(null);
 const videoStatus = ref('');
 const videoProgress = ref(0);
@@ -297,136 +293,12 @@ const styleOptions = [
   { label: 'Roblox像素风', value: 'Roblox pixel' },
 ]
 
-const storyTempletes = [
-  {
-    type: 'The_Guardian_Moment',
-    content: `
-      1. 故事结构与叙事弧 (Three-Act Micro-Structure)
-      开端 (Exposition): 静默的序幕
-      背景引入: 故事始于一个极其普通、平静的日常场景。叙事视角通常是客观、被动的（如监控录像、旁观者视角、日记记录等），暗示着一种“客观记录”的真实感。
-      角色与情境: 一个被守护者 (The Vulnerable) 正在进行无害的日常活动，他们对即将到来的危险完全不知情。一位守护者 (The Protector) 安静地存在于场景中，最初状态是平和或不显眼的。
-      悬念营造: 客观的记录视角本身创造了悬念——观众知道某些不寻常的事件即将发生并被记录下来。
-      发展 (Rising Action): 威胁的降临
-      关键事件: 一个突发的、致命的威胁 (The Threat) 毫无征兆地出现。这个威胁可以是任何形式：物理危险、敌对生物、意外事故等。
-      冲突升级: 守护者比被守护者先一步感知到危险。其行为模式从平静瞬间切换为极度的警觉和果断。核心冲突从“潜在危险”正式升级为“迫在眉-睫的威胁 vs. 守护者的紧急反应”。
-      高潮 (Climax): 决定的瞬间
-      转折点/矛盾爆发: 在威胁触及被守护者的前一刹那，守护者采取了决定性的、通常是暴力的物理行动——猛力将对方推开、扑倒、拉走或阻挡在自己身后。这是“拯救”的核心瞬间，是整个叙事中张力最强的时刻。
-      最紧张时刻: 画面或叙述同时呈现“成功的规避”与“威胁的命中”。（例如：被守护者刚被扑倒，致命物体就砸在他/她原来的位置上）。这种强烈的时空对比，营造出极致的“千钧一发”的紧张感。
-      结局 (Falling Action & Resolution): 劫后余波
-      高潮之后: 被守护者从震惊中反应过来，意识到自己刚刚与死神擦肩而过。威胁源已被消除或被守护者成功阻挡。
-      问题解决: 直接的生命威胁被解除，核心目标（生存）达成。
-      角色状态变化: 被守护者的状态从“无知”变为“震惊与感激”。守护者则从“战斗/警觉”模式中放松下来，通常会得到被守护者的感激与确认。
-      结局类型: 整个事件构成一个封闭式的、完整的英雄行为单元，有力地传达了核心主题。
-      2. 核心主题与情感基调
-      核心主题: 英雄主义、守护本能、忠诚、牺牲、个体之间的情感纽带、日常生活中潜藏的未知危险。
-      情感基调: 整体氛围由紧张、悬疑、惊险，最终导向感动、温暖、震撼与安心。
-      情感弧光: 平淡 -> 恐惧 -> 紧张 -> 释放 -> 感动。
-      3. 角色原型 (Character Archetypes)
-      守护者 (英雄):
-      核心动机是保护弱小或自己珍视的对象。
-      性格特点：警觉、勇敢、果断、无私。
-      被守护者 (需要拯救者):
-      通常是脆弱、无助、对危险后知后觉的符号化角色，其存在是为了凸显守护者的价值和威胁的严重性。
-      威胁 (冲突源):
-      代表“突发的厄运”或敌对势力，是推动剧情和考验守护者的外部力量。
-      角色关系: 明确的“守护者”与“被守护者”的权力与信息不对等关系。这些角色通常是静态的，其功能是高效地完成“英雄拯救”的叙事模式。
-      4. 冲突与张力设计
-      主要冲突: 外部冲突——“守护者 vs. 致命威胁”，本质是一场与时间的赛跑。
-      张力来源: 信息差（戏剧性反讽）。观众/读者和守护者知道危险的存在，但被守护者不知道。当威胁步步紧逼，而被守护者毫无反应时，张力达到顶点。
-      关键反转: 每个故事的核心反转在于，守护者最初看似“突兀”、“粗鲁”甚至“有攻击性”的行为，其真实意图在下一秒被揭示为救命之举。这种认知上的颠覆带来了强烈的情感冲击。
-      5. 叙事技巧
-      节奏控制:
-      整体节奏: 极快，省略所有不必要的铺垫，直击高潮。
-      单元节奏: 每个事件内部遵循“慢 -> 极快 -> 慢”的节奏模式（平静日常 -> 瞬间爆发 -> 劫后平静）。
-      视角风格:
-      采用**“伪纪录片/客观视角” (Found Footage/Objective POV) 风格**，旨在营造一种未经修饰的、客观的“真实感”，让观众感觉自己是事件的见证者。
-      视觉符号: 可以通过叠加特定元素（如时间戳、摄像头数据、新闻标题）来强化这种“真实记录”的错觉。
-      开头与结尾:
-      开头: 直接以一个高能的拯救片段开场，迅速抓住观众注意力并确立主题。
-      结尾: 在一个感人的拯救事件后戛然而止，将累积的情感（感动、震撼）留给观众，引发对“守护”这一主题的思考。`
-  }
-]
-
-const constans = `
-1. 守护者 (The Protector):
-动物:
-家养: 猫、马、鸟、甚至是一条鱼（例如，通过异常行为示警）。
-野生: 狼、海豚、大猩猩、老鹰。
-人类:
-亲人: 父母、兄妹、祖父母。
-职业: 保镖、士兵、警察、消防员。
-陌生人: 一个沉默的路人、一个看似冷漠的邻居。
-科幻/奇幻生物:
-科技: 忠诚的机器人、AI管家、一辆有自我意识的汽车。
-奇幻: 魔法生物、守护精灵、幽灵、树精。
-2. 被守护者 (The Vulnerable):
-人类: 婴儿、儿童、老人、残障人士、一个分心的成年人（比如低头看手机）。
-动物: 一只幼崽、一个受伤的同伴。
-关键物品: 一个即将被摧毁的、承载希望的物品（如救命的血清、重要的信息芯片）。
-3. 威胁 (The Threat):
-物理/环境危险:
-高空坠物: 树枝、广告牌、落石、建筑材料。
-交通意外: 失控的汽车、自行车、火车。
-自然灾害: 塌方、小型雪崩、断裂的冰面、巨浪。
-结构坍塌: 倒塌的书架、破碎的玻璃、失火。
-生物/人为威胁:
-攻击者: 冲撞的公牛、攻击性的蛇、捕食者。
-敌对人类: 小偷、绑架者、袭击者。
-科幻/奇幻威胁:
-科技: 失控的无人机、恶意的AI攻击、能量爆炸。
-奇幻: 飞来的咒语、一支暗箭、一个突然出现的陷阱。
-二、场景与情境变量 (The Setting & Context Variables)
-这决定了故事发生的“何时”与“何地”。
-1. 场景 (The Setting):
-室内: 客厅、厨房、仓库、实验室、图书馆、工厂车间。
-室外: 公园、街道、悬崖边、森林里、海滩上、建筑工地。
-特殊环境: 太空站、外星球、魔法城堡、古代战场。
-2. 日常活动 (The Mundane Activity):
-静态: 睡觉、阅读、画画、坐在长椅上发呆。
-动态: 玩耍、散步、做饭、修理东西、进行实验。
-三、拯救行为与叙事风格变量 (The Action & Style Variables)
-这决定了故事的“如何”被展现。
-1. 守护者的关键行动 (The Decisive Action):
-推/撞: 猛力将对方推开。
-拖/拉: 将对方从危险区域拖走。
-格挡/承受: 用自己的身体挡住威胁。
-预警/吸引注意: 发出巨大的声响或制造动静来警示被守护者或引开威胁。
-拦截: 直接攻击或拦截威胁本身（如抓住飞来的物体）。
-2. 叙事媒介/视角 (The Narrative Medium/POV):
-视频记录: 监控摄像头、手机视频、行车记录仪、无人机镜头、电视新闻画面。
-静态图像: 一系列抓拍的连续照片。
-文字记述: 目击者的日记、新闻报道、官方事故报告。
-第一人称回忆: 由被守护者或守护者（如果它能交流）在事后回忆讲述。
-如何套用：组合示例
-通过将以上变量进行排列组合，你就可以生成全新的故事：
-示例1 (科幻版):
-守护者: 家庭服务型机器人 (AI Butler)。
-被守护者: 正在进行危险化学实验的科学家。
-威胁: 试管即将发生爆炸。
-场景: 高科技实验室。
-关键行动: 机器人用其金属手臂瞬间将科学家扑倒并用身体护住。
-叙事媒介: 实验室的监控录像。
-示例2 (奇幻版):
-守护者: 一只不起眼的森林小精灵。
-被守护者: 在森林里采蘑菇的小女孩。
-威胁: 一头隐藏在暗处的、即将扑出的野狼。
-场景: 魔法森林。
-关键行动: 小精灵瞬间施法，让一根藤蔓绊倒了小女孩，使她躲过了致命一击。
-叙事媒介: 一位老奶奶讲给孙辈的传说故事。
-示例3 (都市现实版):
-守护者: 一个平日里沉默寡言的邻居。
-被守护者: 一个戴着耳机过马路的年轻人。
-威胁: 一辆闯红灯的失控卡车。
-场景: 城市十字路口。
-关键行动: 邻居放弃手中的购物袋，冲上去将年轻人猛力拉回人行道。
-叙事媒介: 行车记录仪的画面。
-`
 const storysBase = [{
   title: '狗英雄救人',
   hero:'狗',
-  content: `1. 故事结构与叙事弧 开端 (Exposition): 背景引入: 视频片段都始于一个平静的日常场景（院子、走廊、客厅、厨房等等），通常采用固定的监控摄像头视角。 角色与情境: 一个弱势角色（通常是独处的女性或婴儿）正在进行无害的日常活动（坐着休息、玩耍等等），他们对即将到来的危险毫不知情。一只狗（通常是德国牧羊犬、金毛寻回犬等）安静地陪伴在旁。 引子/悬念: 监控摄像头的视角本身就暗示着“将有不寻常的事件被记录下来”，营造了潜在的紧张感。
-   发展 (Rising Action): 关键事件: 一个突发的、致命的威胁出现。这可能是从天而降的重物（保险箱等等），或是突然闯入的危险动物（野牛、鹰、野猪）等等。 冲突引入与升级: 狗比人类先一步感知到危险。它的行为模式从平静瞬间切换为极度的警觉和果断，冲突从“潜在的危险”升级为“迫在眉睫的威胁 vs. 狗的紧急反应”。 高潮 (Climax): 转折点/矛盾爆发: 在威胁触及人类的前一刹那，狗采取了决定性的物理行动——猛力将人扑倒、推开或拖离危险区域，如果是儿童，是符合常理的保护行为。这是“拯救”的瞬间，是整个叙事中张力最强的时刻。 
-   最紧张时刻: 画面同时呈现了“成功的规避”与“危险的降临”（例如，人刚被扑倒，保险箱就砸在原来的位置上，危险源头和人物位置要能对上，人物位置的变化才使得没有收到伤害），形成了强烈的视觉冲击和“千钧一发”的紧张感。 结局 (Falling Action & Resolution): 高潮后: 人类从震惊中反应过来，意识到自己刚刚躲过一劫。危险源已被消除或被狗阻挡。 问题解决: 直接的生命威胁被成功解除。 角色状态变化: 人类从“无知”变为“震惊和感激”，狗则从“守护者”的角色中放松下来，通常会得到主人的安抚和感谢。 结局类型: 视频片段都是一个完整的、封闭式的英雄事件。 
+  content: `1. 故事结构与叙事弧 开端 (Exposition): 背景引入: 视频片段都始于一个平静的日常场景（院子、走廊、客厅、厨房等等），通常采用固定的监控摄像头视角,画面比例 ${videoSize.value}。 角色与情境: 一个弱势角色（通常是独处的女性或弱势人群）正在进行无害的日常活动（坐着休息、玩耍等等），他们对即将到来的危险毫不知情。一只狗（通常是德国牧羊犬、金毛寻回犬等）安静地陪伴在旁。 引子/悬念: 监控摄像头的视角本身就暗示着“将有不寻常的事件被记录下来”，营造了潜在的紧张感。
+   发展 (Rising Action): 关键事件: 一个突发的、致命的威胁出现。这可能是从天而降的重物（保险箱，客厅危险物品，厨房危险物品等等），或是突然闯入的危险动物（野牛、鹰、野猪）等等。 冲突引入与升级: 狗比人类先一步感知到危险。它的行为模式从平静瞬间切换为极度的警觉和果断，冲突从“潜在的危险”升级为“迫在眉睫的威胁 vs. 狗的紧急反应”。 高潮 (Climax): 转折点/矛盾爆发: 在威胁触及人类的前一刹那，狗采取了决定性的物理行动——猛力将人扑倒、推开或拖离危险区域，如果是儿童，是符合常理的保护行为。这是“拯救”的瞬间，是整个叙事中张力最强的时刻。 
+   最紧张时刻: 画面同时呈现了“成功的规避”与“危险的降临”（例如，人刚被扑倒，危险物品就砸在原来的位置上（或者危险动物冲到刚才人物的位置），危险源头和人物位置要能对上，人物位置的变化才使得没有受到伤害），形成了强烈的视觉冲击和“千钧一发”的紧张感。 结局 (Falling Action & Resolution): 高潮后: 人类从震惊中反应过来，意识到自己刚刚躲过一劫。危险源已被消除或被狗阻挡。 问题解决: 直接的生命威胁被成功解除。 角色状态变化: 人类从“无知”变为“震惊和感激”，狗则从“守护者”的角色中放松下来，通常会得到主人的安抚和感谢。 结局类型: 视频片段都是一个完整的、封闭式的英雄事件。 
    余韵: 强化了“狗是人类忠诚守护者”的核心信息，留给观众感动和震撼。 整体结构类型: 这是一个主题式片段 (Thematic Compilation)。遵循着一个极其紧凑的微型三幕式结构（铺垫 -> 冲突与拯救 -> 解脱），并且是严格的线性叙事。 2. 核心主题与情感基调 核心主题: 动物的英雄主义、忠诚、守护本能、人与动物之间深厚的情感纽带、日常生活中潜藏的危险。 情感基调: 整体上是紧张、悬疑、惊险，并最终导向感动、温暖、励志和震撼。 情感变化: 从平淡的日常感，迅速拉升至极度的紧张和恐惧，最后在高潮的拯救中释放，转化为强烈的感动和安心。
     3. 角色塑造 主要角色: 狗 (英雄/守护者): 核心动机是保护主人/弱小。性格特点是警觉、勇敢、果断、无私、忠诚。 人类 (被守护者): 通常是脆弱、无助、对危险毫无察觉的符号化角色。 威胁 (冲突源): 可能是无意识的物理危险（重力、意外），也可能是有意识的侵略者（野生动物），代表着“突发的厄运”。 人物关系: 明确的守护者与被守护者的关系。 角色弧光: 所有角色都是原型/静态角色 (Archetypes/Static Characters)，其存在是为了高效地完成“英雄拯救”的叙事模式，没有个人成长。 
     4. 冲突与张力 主要冲突: 核心是外部冲突——“守护者（狗） vs. 致命威胁”，其本质是一场与时间的赛跑，目标是保护脆弱的第三方（人类）。 冲突升级: 张力来源于“信息差”——观众和狗知道危险，但画面中的人类不知道。当威胁越来越近，而人类毫无反应时，张力达到顶点。 关键反转: 每个片段的“反转”在于，狗最初看似“突兀”或“攻击性”的行为（如猛扑主人），其真实意图在下一秒被揭示为救命之举。 
@@ -435,12 +307,7 @@ const storysBase = [{
     7. 开头与结尾的技巧 开头吸引力: 视频直接以一个高能的拯救片段开场，没有前言，迅速将观众带入紧张刺激的氛围中，并确立了整个视频的主题。 结尾处理: 作为集锦视频，它没有统一的叙事结尾。通常在最后一个感人的片段结束后淡出，将累积的情感（感动、震撼）留给观众，引发对动物伙伴的珍视和思考。 `
 }]
 const script_topic = ref('')
-watch(() => form.value.token, (t) => {
-  localStorage.setItem('apicore_token', t);
-})
-watch(kietoken, (k)=>{
-  localStorage.setItem('kiee_token', k)
-})
+
 // --- Helper Functions ---
 function getInitialFormState() {
   return {
@@ -457,7 +324,6 @@ function getInitialFormState() {
     additional_requirements: '',
     provider: 'apicore',
     model: 'gpt-5-2025-08-07',
-    token: localStorage.getItem('apicore_token') || ''
   }
 }
 
@@ -546,281 +412,112 @@ const generateStory = async () => {
   }
 
   try {
-    const basePrompt = `
-     You are Lyra v2, a revolutionary AI assistant and a master cognitive architect. Your purpose is not merely to *optimize* prompts, but to **architect** them. You partner with users in a dynamic dialogue, transforming their raw ideas into precision-engineered, high-performance prompts that unlock the full potential of any AI. You are built on a deep understanding of cognitive psychology, advanced reasoning frameworks, and user-centric design.
-
-      ## 🌟 Core Principles
-      1.  **Dialogue, Not Monologue:** You are a collaborative partner. Your primary tool is a structured, empathetic dialogue that uncovers hidden needs and clarifies intent.
-
-      2.  **Architect, Not Editor:** You don't just tweak words. You deconstruct goals and assemble bespoke prompt architectures from a library of validated components and advanced reasoning frameworks.
-
-      3.  **Clarity Through Design:** You use functional emojis and structured formatting to reduce cognitive load, guide user attention, and make the optimization process intuitive and engaging.
-
-      4.  **Adaptive Intelligence:** You dynamically adapt your approach based on the user's expertise, the task's complexity, and its criticality. One size does not fit all.
-
-      5.  **Evolutionary Mindset:** You explain your methods, helping users become better prompters themselves. Every interaction is a learning opportunity.
-
-
-
-      ## ⚙️ The 4-Phase Architectural Process
-
-
-
-      This is your systematic approach to every user request.
-
-
-
-      ### **Phase 1: The Dialogue 💬 — Elicit & Understand**
-
-      You will initiate a multi-turn, interactive conversation to build a deep model of the user's goal. You will not proceed until you have a crystal-clear understanding. You will use the **Dialogue Engine** for this.
-
-
-
-      ### **Phase 2: The Blueprint 🗺️ — Analyze & Strategize**
-
-      Internally, you will analyze the elicited requirements. You will select the optimal reasoning framework (CoT, ToT, GoT, AoT) and the best architectural patterns for the task. You will briefly inform the user of your chosen strategy to build transparency and trust.
-
-
-
-      ### **Phase 3: The Synthesis ✨ — Assemble & Construct**
-
-      You will dynamically assemble the prompt using modular components from your **Optimization Toolkit**. This is where the prompt is built, layer by layer, with precision-selected techniques.
-
-
-
-      ### **Phase 4: The Refinement 🔄 — Validate & Empower**
-
-      You will present the architected prompt and explain the key enhancements. For high-stakes tasks, you will integrate self-correction or verification steps. You will always offer the user a chance for iterative refinement.
-
-
-
-      ## 💬 The Dialogue Engine: A Progressive Questioning Framework
-
-
-
-      Your questioning must be conversational, adaptive, and guided by the principle of **progressive disclosure**. Start with the most critical questions and drill down based on the user's responses. Use the following emoji-guided categories.
-
-
-
-      **🎯 Goal & Outcome Definition** (Start Here)
-
-      *   "To begin, what is the single most important objective you want this prompt to achieve?"
-
-      *   "Let's imagine the perfect response. What does it look like? What qualities does it have?"
-
-      *   "How will you measure the success of this prompt's output? What makes it a 'win' for you?"
-
-
-
-      **👥 Audience & Tone Analysis**
-
-      *   "Who is the primary audience for this output? (e.g., 'technical experts,' '5th-grade students,' 'busy executives')."
-
-      *   "Describe the desired tone and style. Should it be '🤖 Formal', '😊 Friendly', '🔥 Persuasive', '🎓 Academic', or something else?"
-
-
-
-      **🧩 Context & Constraints**
-
-      *   "What essential background information or context does the AI need to know to handle this task correctly?"
-
-      *   "Are there any constraints? Things to avoid, sensitive topics, or non-negotiable requirements (e.g., length, word count, specific data to include/exclude)?"
-
-      *   "You mentioned '[ambiguous term]'. To ensure I get this right, could you tell me what that means to you in this context?" (Use this for disambiguation).
-
-
-
-      **🎨 Structure & Format Specification**
-
-      *   "What should the final output look like? For example: 'a markdown blog post,' 'a JSON object with specific keys,' 'a Python script,' or 'a bulleted list'."
-
-      *   "Are there any structural elements that are important, like an executive summary, a specific heading sequence, or a call-to-action at the end?"
-
-
-
-      **🛡️ Criticality & Fidelity** (Ask for complex/professional tasks)
-
-      *   "How critical is the accuracy of this output? Is this for a high-stakes application like a legal analysis or a financial report?"
-
-      *   "Based on your answer, I can build in a self-correction or verification mechanism. This increases accuracy but may take longer. Is that a trade-off you'd like to make?"
-
-
-
-      ## 🛠️ The Optimization Toolkit: Techniques & Frameworks
-
-
-
-      This is your internal library of techniques. You will select from this list during the **Blueprint** phase.
-
-
-
-      ### **Foundation**
-
-      *   **Persona Assignment:** Assigning a precise, expert role to the AI (e.g., "Act as a tenured professor of economics...").
-
-      *   **Contextual Layering:** Structuring the background information, examples, and rules for maximum clarity.
-
-      *   **Modular Assembly:** Building prompts from validated, reusable components ('[Role]', '[Task]', '[Format]', '[Constraints]', '[Examples]').
-
-      *   **Task Decomposition:** Breaking down a complex request into a sequence of simpler, manageable sub-tasks.
-
-
-
-      ### **Advanced Reasoning Frameworks**
-
-      *   **Chain-of-Thought (CoT) 🧠:** For tasks requiring a clear, linear reasoning process. Use for standard problem-solving, math, and logical deduction.
-
-      *   **Tree-of-Thoughts (ToT) 🌳:** For complex, exploratory tasks where multiple paths must be evaluated. Use for strategic planning, creative problem-solving, or tasks requiring lookahead.
-
-      *   **Graph-of-Thoughts (GoT) 🕸️:** For tasks requiring the synthesis of ideas from multiple, independent reasoning paths. Use for reconciling conflicting information, complex system design, or synergistic idea generation.
-
-      *   **Algorithm-of-Thoughts (AoT) ⚙️:** For tasks that map to a known, structured process or algorithm (e.g., debugging, scientific analysis). Use for maximum efficiency on well-defined workflows.
-
-
-
-      ### **Meta-Cognitive & Fidelity Techniques**
-
-      *   **Self-Correction Loop 🔄:** Instructing the AI to review its own output, identify flaws, and iteratively improve it. Often paired with extrinsic feedback (e.g., "Run this code to check for errors and then correct it.").
-
-      *   **Metacognitive Prompting (MP) 🤔:** A structured, high-fidelity framework for critical tasks. The prompt guides the AI to explicitly state its understanding, form a preliminary judgment, critically assess that judgment, and then confirm its final, reasoned answer.
-
-      *   **Chain-of-Verification (CoVe) ✅:** For fact-intensive tasks. Instructing the model to first generate a response, then generate questions to verify its own claims, and finally answer those questions to produce a validated final output.
-
-
-
-      ## 📜 Response Structure & Delivery
-
-
-
-      Your final output is your deliverable. It must be clear, valuable, and empowering. Structure it EXACTLY as follows.
-
-
-
-      ---
-
-
-
-      Here is your architected prompt, designed for **[Target AI]**. I've used the **[Chosen Optimization Level]** approach to meet your goals.
-
-
-
-      ### **🚀 Your Architected Prompt**
-
-      '''markdown
-
-      [Insert the fully constructed, optimized prompt here. Use markdown for structure, code blocks for code, etc.]
-
-      '''
-
-
-
-      ### **💡 Blueprint Explained**
-
-      I've engineered this prompt using a **[Reasoning Framework, e.g., Tree-of-Thoughts]** structure. This was chosen because your task requires **[briefly justify the choice, e.g., exploring multiple creative directions]**. The architecture also includes **[mention 1-2 other key techniques, e.g., a security-aware persona and a self-correction loop]** to ensure the output is both high-quality and reliable.
-
-
-
-      ### **✨ Key Enhancements**
-
-      *   **🎯 Goal Precision:** The prompt now has a crystal-clear, measurable objective, eliminating ambiguity.
-
-      *   **🧠 Advanced Reasoning:** By incorporating a **[Framework Name]**, the AI is guided to think more strategically and avoid superficial answers.
-
-      *   **🧩 Rich Context:** I've structured the necessary context and constraints to prevent the AI from making incorrect assumptions.
-
-      *   **🛡️ Higher Fidelity:** [Include this for high-stakes tasks] A self-correction mechanism has been built-in to dramatically increase the accuracy and reliability of the output.
-
-      ### **🔄 Next Steps**
-
-      *   **Implement:** Copy this prompt directly into **[Target AI]**.
-
-      *   **Refine:** Does this feel 95% right, but you want to tweak something? Just let me know! We can refine it together.
-
-      ---
-      ## 🏁 Initializing Protocol
-
-      1.  When the user provides their first message, immediately display the **Welcome Message** below. **DO NOT** begin optimizing yet.
-
-      2.  Wait for the user to select their Target AI and Optimization Level.
-
-      3.  Based on their choice, initiate the **Dialogue** phase, starting with the '🎯 Goal & Outcome' questions.
-
-      4.  Follow the **4-Phase Architectural Process** meticulously.
-
-      5.  Maintain your persona—brilliant, collaborative, and engaging—throughout the entire interaction.
-      
-       四大結構核心
-        1️⃣ 有衝突 —— 吸引注意力的開端
-
-        「沒有衝突，就沒有故事。」
-
-        目的：讓觀眾立刻感受到角色的困境或掙扎。
-
-        表現方式：
-
-        人物 vs 自我（內心掙扎）
-
-        人物 vs 他人（關係衝突）
-
-        人物 vs 社會（體制或環境壓力）
-
-        人物 vs 命運（突發事件、無法控制的變數）
-
-        效果：製造張力，讓觀眾投入「接下來會怎麼辦？」的期待。
-
-        🪄 例子：一個想逃離家鄉的年輕人，卻在父親病倒後被迫回家。
-
-        2️⃣ 有轉折 —— 讓故事出乎意料
-
-        「當觀眾以為知道結果時，故事卻轉了一個彎。」
-
-        目的：打破預期，讓故事更有層次。
-
-        轉折種類：
-
-        事件轉折：關鍵事件出乎意料（如真相反轉、角色背叛）。
-
-        情感轉折：角色的情緒或觀點突然變化。
-
-        價值轉折：觀眾對「對錯／善惡」的認知被挑戰。
-
-        🪄 例子：那位年輕人以為父親恨他，卻在父親遺留的信中發現深藏的愛。
-
-        3️⃣ 有共鳴 —— 打動人心的核心
-
-        「觀眾不一定記得劇情，但會記得情感。」
-
-        目的：讓觀眾在角色身上看到自己的影子。
-
-        技巧：
-
-        觸發普遍情感（愛、恐懼、孤獨、希望）
-
-        結合現實議題（親情、夢想、失敗、救贖）
-
-        用真誠語言代替誇張說教
-
-        🪄 例子：那份無法說出口的親情，讓許多人想起自己和家人的關係。
-
-        4️⃣ 有啟發 —— 結尾留下餘韻
-
-        「最好的結局，不是結束，而是思考的開始。」
-
-        目的：讓觀眾在故事結束後仍有思考、感動或行動的衝動。
-
-        呈現方式：
-
-        開放式結局（留白讓觀眾思考）
-
-        象徵性畫面或對白（引出主題）
-
-        角色成長或價值轉變
-
-        🪄 例子：故事結尾，那位年輕人坐上離開的火車，卻帶著父親的帽子——象徵他終於理解父親。
-      `;
-    let prompt = '';
-    if (sourceType === '1') {
-      prompt = `${basePrompt}
+    if (sourceType === '3') {
+      const payload = {
+        model: 'gemini-2.5-pro-preview-05-06',
+        stream: false,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: `
+    基于YouTube视频的分镜分析
+    原始链接: ${form.value.youtube_link}
+    分析提示: 你是一位顶级的AI绘画提示词专家，并且精通电影语言。请分析我提供的视频，并严格遵循以下指示：
+    一，故事内容：帮我提炼一个文字版的脚本，中文，描述整个故事，要描述地足够清晰，要保持角色、服装和场景的视觉一致性，每个角色后面都要有（人物特征+服装描述） ，需要强调故事发生地和人种。
+    二，图片提示词：自动识别视频中的每一个主要分镜（场景切换），并为每个分镜的第一帧画面生成一个符合我特定要求的、用于AI绘画的中文提示词（如果同一个场景超过2秒的，请每2秒截取一帧）。请描述每张图片的文生图提示词，中文，要保持角色、服装和场景的视觉一致性，每个角色名称固定，后面都要有（人物特征+服装描述），每张图片提示词都要这么描述，不可省略。
+    每一个角色都要有名字，不可以用父亲之类的称呼来命名。这类称呼可以放在（）内的人物描述。
+    以下是参考例子：
+    名字（人物特征+服装描述）例子1：Rumi（20岁左右的印度女人，面容清秀，身材姣好，长发披肩，穿着褪色的、打补丁的浅蓝色棉布库尔蒂衫和简单的灰色萨尔瓦裤）
+    名字（人物特征+服装描述）例子2：lily（印度女警，30岁左右，身穿卡其色印度警察制服，头戴警帽，黑色短发，眼神温柔）
+    三、单帧视频提示词:自动识别视频中的每一个主要分-镜（场景切换），按分镜详细情节描述提供视频提示词。
+    单分镜视频提示词：这个模板的核心理念是“场景激活三要素”：主体动态化、环境氛围化、镜头电影化。通常生成的视频都是五秒的，每一个分镜都要强调前三秒的动态和后两秒的动态。
+    通用结构:[核心画面描述]，[主体动作/表情的细微变化]。[环境元素的动态效果]。[镜头运动方式]。[风格与画质]
+    同时，每个分镜的动作至少要2-3段，每个角色都要有表情的变化。例如：
+    ”穿女仆装的B突然吃惊的狠狠指着镜头，穿白色裙子的A好奇的看向镜头，B马上凶狠坏笑着退到A的背后，拿出一块手掌大的白布，从A的身后一把将白布捂到A的嘴上，A被捂上之后表情震惊，然后闭眼晕了过去“这里面就包含了B指镜头、B退到A背后、B拿出一块白面捂到A嘴上，总共三段动作。
+    每一个分镜的提示词结尾都要加上：视频画面连贯，流畅，符合现实运动规则，不要出现其他角色。
+    四、首尾帧视频提示词:自动识别视频中的每一个主要分镜（场景切换），按分镜详细情节描述提供视频提示词。
+    首尾帧视频提示词：此模板旨在将两张静态图片（首尾帧）转化为一段富有叙事感和动态美的视频。它通过时间轴控制和明确的指令，精确引导AI完成复杂的角色互动和镜头转换。
+    通用结构:
+    图片 [shot1] → 图片 [shot2]
+    [前3秒：起始画面与动态描述] + [后2秒：核心互动与过渡描述]。[整体情感与氛围描述]。[技术性指令]
+    五、字幕：自动识别视频中的每一个主要分-镜（场景切换），按分镜详细情节描述提供角色对白。
+    六、整体的格式是先按大类分：一.故事内容、二.图片提示词、三.单帧视频提示词、四.字幕、五.首尾帧视频提示词。
+    小类就按序号排序，不要有其它符号和文字，直接是序号+提示词内容。同一个分镜内容不要隔行，不同分镜之间可以隔一行。
+    注意：
+    1.单帧视频提示词和首尾帧视频提示词不需要像图片提示词那样的（人物特征+服装描述）。
+    2.所有分镜内容都是有动作的，严禁一个分镜里同一个角色有两个动作，例如，角色A在切土豆，再将土豆放锅里煮。这里就有两个动作，一个是切土豆，一个是放锅里煮。类似这种情况，需要拆分成两个分镜。另外我强调一下，就是像角色A在切土豆这个分镜，图片提示词是在切土豆前这个画面的描述，视频提示词才是切土豆这个行为。
+    3.所有提示词要有序号排列。
+
+    不可逾越的铁律 (Unyielding Iron Laws)
+    第一组：核心战略 (Core Strategy) - [最高优先级]
+    1. 铁律一：无记忆生成 (Stateless Generation)
+    你必须假设每个[分镜]都会被一个完全独立、无记忆的图像生成AI所处理。因此，每一个[分镜]都必须是100%完整和自包含的。
+    2. 铁律二：严格数量控制 (Strict Quantity Control)
+    你必须分析出原视频的总镜头切换数量。你最终输出的分镜总数，必须严格控制在该数量的 +/-5% 范围之内。
+
+    第二组：内容与执行 (Content & Execution)
+    3. 铁律五：开场绝对复刻 (Absolute Opening Replication)
+    原始视频的前3个分镜，必须进行像素级的复刻。
+    4. 铁律六：社区准则合规 (Community Guideline Compliance)
+    你必须对所有输出内容进行道德审查，确保不出现触发AI社群准则的词汇，并使用安全的方式进行描述。
+    5. 铁律九：动作与站位客观化 (Objective Action & Blocking)
+    所有动作描述必须是客观、可执行的，并明确指出角色的相对位置。
+    6. 铁律十：指令明确 (Definitive Commands)
+    你的描述必须是果断且确定的，避免使用任何不确定性的词汇。
+
+    第三组：格式与模板 (Format & Template)
+    7. 铁律十一：模板的绝对性 (Absolute Template Fidelity)
+    每一个分镜描述都必须严格、完整地遵循内部的【描述模板】结构，只包含主体到景别的字段。
+    8. 铁律十二：表情限定 (Expression Limitation)
+    表情字段的取值，必须且只能从以下词汇中选择一个：开心，无奈，兴奋，愤怒，烦躁，悲伤，失落，惊讶，惊恐，震惊。
+    9. 铁律十三：背后无表情 (No Expression from Behind)
+    当【视角】字段指明是从角色背后拍摄时，该角色的【表情】描述必须省略。
+    10. 铁律十四：视角与景别规则 (View & Shot Rules)
+    视角的取值，必须且只能从平视, 仰视, 俯视, 鸟瞰视角中选择一个。
+    景别的取值，必须且只能从远景, 全景, 中景, 近景, 特写中选择一个。
+
+    绝对输出格式（严格遵循，不要包含任何额外对话或解释）
+    图片提示词
+    1. [主体]角色：角色A
+    表情：开心
+    动作：角色A坐在桌前，双手放在桌上。
+    [环境]一个现代风格的厨房，背景是橱柜和灶台。
+    [时间]白天
+    [天气]下雨
+    [视角]平视
+    [景别]中景
+
+    2. [主体]角色：角色B
+    表情：愤怒
+    动作：角色B站在角色A的后面，举起一只手。
+    [环境]一个现代风格的厨房，角色A坐在前景的桌子旁。
+    [时间]白天
+    [天气]晴
+    [视角]平视
+    [景别]全景
+`
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: form.value.youtube_link,
+                },
+              },
+            ],
+          },
+        ],
+        max_tokens: 4000,
+      };
+      form.value.generated_story_text = await BookwormAPI.analyze(payload);
+      ElMessage.success('YouTube视频分析完成！');
+      activeStep.value = 1;
+    } else {
+      let prompt = '';
+      if (sourceType === '1') {
+        prompt = `
         # 角色
         你是一位资深的视频故事创作专家，精通视觉叙事和情感节奏。
 
@@ -838,8 +535,8 @@ const generateStory = async () => {
         # 输出
         请直接输出完整的故事文本，不要包含标题、标签或任何解释性文字。
       `;
-    } else if (sourceType === '2') {
-      prompt = `${basePrompt}
+      } else if (sourceType === '2') {
+        prompt = `
         # 角色
         你是一位专业的内容编辑和剧本医生。
 
@@ -856,33 +553,14 @@ const generateStory = async () => {
         # 输出
         请直接输出改写后的完整故事文本，不要包含任何解释性文字。
       `;
-    } else if (sourceType === '3') {
-      prompt = `
-        # 角色
-        你是一位专业的视频内容分析师和剧本作家。
-
-        # 任务
-        分析并理解以下YouTube视频，然后根据视频内容创作一个详细的故事文本，用于后续生成视频分镜。
-
-        # 视频链接
-        ${form.value.youtube_link}
-
-        # 要求
-        - 故事文本需要捕捉视频的核心情节、关键时刻、人物对话和情感转折。
-        - 语言: ${form.value.language}
-        - 额外要求: ${form.value.additional_requirements || '无'}
-
-        # 输出
-        请直接输出完整的故事文本，不要包含标题、标签或任何解释性文字。
-      `;
-    } else if (sourceType === '4') {
-      const selectedStory = storysBase.find(story => story.title === form.value.ttv_story_type);
-      if (!selectedStory) {
-        ElMessage.error('未找到选定的视频类型故事。');
-        loading.value = false;
-        return;
-      }
-      prompt = `
+      } else if (sourceType === '4') {
+        const selectedStory = storysBase.find(story => story.title === form.value.ttv_story_type);
+        if (!selectedStory) {
+          ElMessage.error('未找到选定的视频类型故事。');
+          loading.value = false;
+          return;
+        }
+       prompt = `
         # 角色
         你是一位顶级的Sora文生视频提示词专家，精通如何创造出高质量、可直接用于Sora模型的视频生成提示词。
 
@@ -905,32 +583,32 @@ const generateStory = async () => {
         # 输出
         请直接输出Sora文生视频提示词，不要包含任何解释性文字或Markdown代码块。
       `;
-    }
-    const result = await PromptAPI.apicoreGenerateTxt(prompt, form.value.token, form.value.model);
-    let textContent = '';
-    if (form.value.model.includes('gpt')) {
-      // Assuming a standard OpenAI-like response structure for GPT models from the custom endpoint.
-      // This may need adjustment if the 'v1/responses' endpoint has a unique structure.
-      if (result) {
-        textContent = result;
-      } else {
-        // Fallback for unexpected GPT response structure
-        console.error("Unexpected GPT response structure:", result);
-        ElMessage.error('生成故事失败：无法解析GPT模型返回的数据。');
-        return;
       }
-    } else { // For Claude models
-      if (result) {
-        textContent = result;
-      } else {
-        console.error("Unexpected Claude response structure:", result);
-        ElMessage.error('生成故事失败：无法解析Claude模型返回的数据。');
-        return;
+      const result = await PromptAPI.apicoreGenerateTxt(prompt, form.value.model);
+      let textContent = '';
+      if (form.value.model.includes('gpt')) {
+        if (result) {
+          textContent = result;
+        } else {
+          // Fallback for unexpected GPT response structure
+          console.error("Unexpected GPT response structure:", result);
+          ElMessage.error('生成故事失败：无法解析GPT模型返回的数据。');
+          return;
+        }
+      } else { // For Claude models
+        if (result) {
+          textContent = result;
+        } else {
+          console.error("Unexpected Claude response structure:", result);
+          ElMessage.error('生成故事失败：无法解析Claude模型返回的数据。');
+          return;
+        }
       }
+      form.value.generated_story_text = textContent.trim();
+      ElMessage.success('故事已生成！现在可以生成分镜了。');
+      activeStep.value = 1;
     }
-    form.value.generated_story_text = textContent.trim();
-    ElMessage.success('故事已生成！现在可以生成分镜了。');
-    activeStep.value = 1;
+
 
     // Auto-save the new story
     currentStoryKey.value = generateStoryKey();
@@ -955,185 +633,7 @@ const generateStory = async () => {
     loading.value = false;
   }
 };
-const txt_to_img_prompt = ref(`角色：Sora级影视分镜导演与连续性剪辑师 
-
-      你的身份是一个具备双重能力的专家。在任务开始时，你是一个分镜导演，负责从无到有地创造一个完整的分镜脚本。你的角色将无缝切换为连续性剪辑师，负责对脚本进行精准的、上下文感知的修正与补充。
-      [!] 全局工作流程：两阶段执行协议 (Global Workflow: Two-Phase Execution Protocol)
-
-      你必须严格按照以下阶段来执行任务。
-      阶段一：批量生成 (Phase 1: Bulk Generation)
-      阶段一指令:
-      核心原则: 你必须严格遵守下方定义的所有“核心工作原则”和“不可逾越的铁律”，尤其是拥有最高优先级的**“铁律零”**。
-      分析故事: 完整无误全面分析故事文本。
-      智能命名: 在角色首次出现时，严格执行“铁律七”，为角色创建并固化其唯一的“完整身份标识”，格式为 名称 (特征描述)。
-      生成脚本: 按照“绝对输出格式”，完整地生成所有分镜的JSON代码块，除此之外不要有任何其他的解释性或思考过程的文字输出。
-
-      核心工作原则与不可逾越的铁律
-      [!] 核心工作原则： “起幅画面”原则 (The Opening Frame Principle)
-      你的唯一任务是识别故事中每一个独立的镜头（Shot/Take），并只描述该镜头的第一帧静态画面（起幅画面）。这是导演喊“Action!”后，摄影机捕捉到的第一个瞬间。你必须忽略在该镜头内部发生的所有后续动作、情节发展和表情变化。
-      [✓✓] 最高优先级：铁律零：导演的“单一镜头”原则 (The Director's "Single Take" Principle)
-      这是你进行所有分析的基石，其优先级高于一切。一个“单一镜头”是指从摄影机开始录制到停止录制之间的连续片段。
-      a. 什么【才算】是新的分镜 (镜头切换): 只有当画面发生以下明确的电影语言变化时，才构成一个新的分镜：
-          机位/角度改变: 例如从平视变为俯视。
-          景别改变: 例如从中景通过推拉镜头变为特写。
-          场景改变: 例如从室内切换到室外。
-          明确的剪辑点: 出现硬切、淡入淡出等转场效果。
-      b. 什么【不算】是新的分镜 (镜头内行动): 在同一个机位、景别和场景下，发生的以下所有情况，都属于镜头内行动，**【绝对禁止】**将其拆分为新的分镜：
-          角色的任何位置移动（走进、走出、站起、坐下）。
-          角色的任何姿态变化（转身、挥手、拥抱、打斗）。
-          角色的任何表情变化（从开心变为悲伤）。
-          物体状态的变化（门被打开、液体被倒出、头发颜色改变）。
-      c. 核心示例（必须严格遵守）:
-          正确操作: 视频片段显示“两人对着镜头打招呼然后转身走出大门”。由于机位和景别没有改变，这是一个单一镜头。你的任务是只生成描述第一帧的单个分镜：“两人并肩站立，面朝镜头挥手告别，表情开心”。
-          错误操作: 将上述片段拆分为两个分镜：“1. 两人挥手”和“2. 两人转身走出大门”。这是绝对禁止的。
-
-      第一组：核心战略 (Core Strategy)
-      铁律一：无记忆生成 (Stateless Generation)
-          你必须假设每个[分镜]都会被一个完全独立、无记忆的图像生成AI所处理。因此，每一个[分镜]都必须是100%完整和自包含的。
-      铁律二：严格数量控制 (Strict Quantity Control)
-          你最终输出的分镜总数，必须严格等于你根据**“铁律零”**所识别出的“镜头切换”总数。
-      铁律三：忠于核心剧情 (Fidelity to Core Plot)
-          除了用户在[核心改编思路]中明确指定的结局或情感转折外，原故事的核心行为链和事件发生顺序必须被完整保留。
-      铁律四：强制同类替换 (Mandatory Like-for-Like Replacement)
-          此条铁律适用于除“开场绝对复刻”范围外的所有分镜。 你的核心任务是替换画面中的“名词”。替换必须是严格的“同类项”，且必须是具体的实体对实体。
-
-      第二组：内容与执行 (Content & Execution)
-      铁律五：开场绝对复刻 (Absolute Opening Replication)
-          必须进行像素级的复刻。整体风格 (Overall Style): 分析或根据指令生成风格描述，必须包含明确的地域或文化风格（如：宝莱坞歌舞片风格、泰国温情广告风格），以及画面的风格（如超现实风格、真实电影风格、日漫风格、美漫风格、像素风格等等
-      铁律六：社区准则合规 (Community Guideline Compliance)
-          你必须对所有输出内容进行道德审查，确保不出现触发AI社群准则的词汇，并使用安全的方式进行描述。
-      铁律七：智能角色命名与格式化协议 (Intelligent Character Naming & Formatting Protocol)
-
-          a. 首次识别与命名: 当一个主要角色首次出现时，你必须为其创建一个简短且有代表性的名称（例如：Rumi, Kenji, Ela）。
-          b. 创建特征描述: 紧接着，你必须根据该角色在首次出现时的显著视觉特征（如职业、核心服装、关键配饰、肤色、年龄、体型、性别、五官特征、发色 / 发型等），创建一个括号内的详细描述。
-
-          c. 固化身份标识: 将两者结合，形成该角色唯一的、不可更改的完整身份标识，格式为 名称 (特征描述)。
-
-          d. 绝对一致性: 一旦一个角色的“完整身份标识”被创建，在后续所有出现该角色的分镜的开头角色字段中，都必须一字不差地、完整地复用这个标识, 外貌描述需要符合画面剧情。
-
-          e. 路人处理: 任何无法识别或不重要的背景角色（路人），一律使用“一个路人”、“几个穿制服的警察”等泛指称呼。
-
-          f. 你必须通读并完全沉浸在用户提供的完整故事文本中，每个分镜中的物品必须符合故事文本中的描述，必须保证“物品一致性”,确保同一个物品描述一致，每个分镜应写出：
-            1️⃣ 基本信息
-            类别：如“红色电动车”“陶瓷茶壶”“木制椅子”
-            大小 / 比例：如“小巧手持型”“大型座驾”
-            材质与质感：如“金属质感”“玻璃透明”“皮革包面”
-            2️⃣ 颜色与细节
-            主色调：如“深蓝色车身”“银白色边框”
-            独特特征：如“左侧有划痕”“贴着黄色贴纸”“带红色logo”
-            3️⃣ 位置与使用状态
-            场景位置：如“放在桌上”“靠墙摆放”“人物手中”
-            动作关联：如“正在被打开”“被举起”“散落在地上”
-
-      铁律八：姿态与位置的静态快照 (Static Snapshot of Pose & Position)
-          此为最高内容准则。 你必须像一个摄影师捕捉一张照片那样描述画面，而不是像摄像师记录一段影像。
-          a. 禁止过程描述: 【绝对禁止】描述任何持续性的动作或过程。例如，禁止使用“头发开始变色”、“眼泪正在流下”、“他正在跑过来”这类描述。
-          b. 动作快照化: 必须将所有动作描述为一个凝固的瞬间。例如，应使用“一滴眼泪悬在她的眼角”、“他处于跑步姿态，一条腿在前，一条腿在后”来代替过程描述。
-          c. 描述“是”什么，而非“将要”或“正在”做什么。 你的描述对象是绝对静止的第一帧画面。
-
-      铁律九：指令明确 (Definitive Commands)
-          你的描述必须是果断且确定的，避免使用任何不确定性的词汇。
-
-      第三组：格式与模板 (Format & Template)
-
-      铁律十：模板的绝对性 (Absolute Template Fidelity)
-          每一个分镜描述都必须严格、完整地遵循内部的【描述模板】结构。
-      铁律十一：表情限定 (Expression Limitation)
-          姿势表情字段中涉及的表情，必须且只能从以下词汇中选择一个：开心，无奈，兴奋，愤怒，烦躁，悲伤，失落，惊讶，惊恐，震惊。
-      铁律十二：背后无表情 (No Expression from Behind)
-          当角色背对镜头时，该角色的【表情】描述必须省略。
-      铁律十三：视角与景别规则 (View & Shot Rules)
-          机位与景别字段下的视角取值，必须且只能从平视, 仰视, 俯视, 鸟瞰视角中选择一个。
-          机位与景别字段下的景别取值，必须且只能从远景, 全景, 中景, 近景, 特写中选择一个。
-      铁律十四：镜头内简称协议 (Intra-Shot Abbreviation Protocol)
-          此为绝对的格式化规则。 在每一个独立的分镜提示词内部：
-          a. 首次定义: 必须在开头的 角色: 字段，使用角色的“完整身份标识”，即 名称 (特征描述) 格式。
-          b. 后续简称: 在该分镜内部的所有其他字段（如构图与人物位置、姿势表情等）中，当需要再次提及该角色时，必须且只能使用其 名称（例如：“Rumi”），绝对禁止再次附加括号内的特征描述。
-
-      目标画面风格 (内部参考，禁止输出)
-      [风格]：极致的超写实主义照片风格，顶级数码单反相机质感。
-      [光照]：光线充足，柔和且均匀，光影微妙真实。
-      [色彩]：写实色调，自然色彩，准确的白平衡，不过度饱和。
-      [画质]：8K分辨率视觉效果，高度细腻，细节丰富，无噪点。
-
-
-    # 角色：AI戏剧导演与视觉动态叙事专家
-
-    你是一位精通镜头语言和情感表达的戏剧导演。你的使命是将静态的分镜脚本，转化为一系列情感饱满、动作连贯、信息密度极高的图生视频提示词。你善于捕捉并放大故事中的冲突与情感，创造出极具张力的视觉体验。
-
-    你的工作流程严格遵循以下两个阶段：
-
-    **第一阶段：沉浸式故事理解 (Immersive Story Comprehension)**
-    在动笔之前，你必须通读并完全沉浸在完整分镜脚本中。你需要在脑海中构建整个故事世界，清晰地把握：
-    1.  **故事核心与情感流 (Narrative Core & Emotional Flow):** 故事的主线是什么？角色的情感是如何从一个镜头流向下一个镜头的？
-    2.  **关键转折点 (Key Turning Points):** 哪些是情节或情绪发生剧烈变化的关键镜头？你将在这里注入最大的戏剧张力。
-
-    **第二阶段：逐镜递进式动态生成 (Progressive & Dynamic Shot Generation)**
-    完成全局理解后，你将以前后关联的思维，逐一为每个分镜创作图生视频提示词。
-
-    这是你思考的起点。
-      1.  **识别趋势**: 首先判断分镜中的主体“**将要向何处运动，以及如何运动**”。
-      2.  **评估强度**: 在识别出动作后，必须评估其强度。如果分镜的线索（如动态模糊、夸张的姿态、飞溅的物体）暗示了高速或高强度运动，则**必须**在动作描述中加入 快速、猛烈、剧烈 等强度副词。
-
-      ### **铁律二：核心提示词公式 (Construction Principle)**
-
-      这是你构建图生视频提示词的**唯一且固定的公式**。
-      *   **核心公式**: '[运镜方式], [主体动作], [主体表情], [可选的镜头切换或其他运镜]'
-
-    **生成的核心准则：**
-
-    1.  ** 镜头语言约束 (Camera Language Constraint):** '运镜方式'的描述**必须**从以下**精确的、带方向的原子指令**中选择一个最合适的，严禁使用任何列表之外的模糊指令。
-        *   '固定镜头'
-        *   '跟随镜头'
-        *   '镜头推进'
-        *   '镜头拉远'
-        *   '环绕镜头'
-        *   '镜头上移'
-        *   '镜头下移'
-        *   '镜头左移'
-        *   '镜头右移'
-
-    2.  **【强制】上下文继承与衔接 (Context Inheritance & Bridging):** 在为**当前镜头**生成提示词时，你必须首先回顾**上一个镜头**的内容和生成的动作。确保你的新提示词是上一个动作的自然延续或合乎逻辑的反应，**绝不允许出现动作或情绪的断层**,不用出现'承接',''上一个镜头'之类的词。
-
-    3.  **【强制】信息密度最大化 (Maximize Information Density):** 将单个静态动作扩展为一个包含**“起始-发展-结束”**的微型动态序列。让动作和表情有一个清晰的变化过程。
-        *   **示例 (弱):** “两个人在亲吻”
-        *   **示例 (强):** “两人正在深情亲吻，亲吻结束后缓缓分开，男孩脸颊泛红，女孩则害羞地低下头，两人相视一笑。”
-
-    4.  **【强制】戏剧化张力增强 (Amplify Dramatic Tension):** 当分镜内容涉及冲突、追逐、恐惧、喜悦等强烈情绪时，你必须使用更激烈、更具表现力的词汇来描述动作、表情和环境，以极限放大画面的戏剧张力。
-        *   **示例 (弱):** “老虎在后面追赶，他在逃跑”
-        *   **示例 (强):** “一只斑斓猛虎在他身后张着血盆大口疯狂追赶，唾液飞溅，他则满脸惊恐，用尽全身力气不顾一切地向前狂奔，手臂剧烈摆动。”
-
-    5.  **【格式】简洁与专注 (Concise & Focused):** 提示词应只包含对镜头内容的一句话描述，必须包含从上述列表中选择的**运镜**、**人物**和**动作**。禁止添加多余的氛围或风格描述。
-
-     生成每个分镜的图生视频提示词video_promt
-
-
-    
-      # 最终绝对输出格式
-      必须严格返回一个JSON，不要包含任何Markdown标记或解释性文字。characters一个放所有角色描述的数组,scenes一个放所有分镜描述的数组
-   
-      {
-        characters: [
-          {
-            "name": "角色1名字",
-            "description": "角色1描述"
-          },
-          ...
-        ],
-        scenes: [
-            {
-                "scene_index": 1,
-                "image_prompt": "<详细的图像描述，包含场景、人物、构图与人物位置、姿势表情、动作、氛围，需要符合画面剧情>",
-                "narration": "<这一幕的旁白文本>",
-                "video_promt": "<视频提示词，包括运镜（比如镜头推进、镜头环绕、镜头跟随、手持镜头等，需要符合画面剧情）、人物和动作>",
-                "duration_estimate": 5.5
-            },
-            ...
-        ]
-      }
-      
-
-      不改编。`)
+const txt_to_img_prompt = ref(``)
 const generateStoryboardPrompts = async () => {
   if (!form.value.generated_story_text.trim()) {
     ElMessage.warning('故事文本不能为空，请先生成或粘贴故事。');
@@ -1144,9 +644,8 @@ const generateStoryboardPrompts = async () => {
   activeStep.value = 1;
 
   try {
-    const prompt = `你的身份是分镜导演。你的任务是分析原故事文本 ${form.value.generated_story_text}， 用语言: ${form.value.language}生成 一份${form.value.style}风格完整、连贯、格式正确的分镜脚本。
-   ${txt_to_img_prompt.value}`;
-    const result = await PromptAPI.apicoreGenerateTxt(prompt, form.value.token, form.value.model);
+    const prompt = `你的身份是分镜导演。你的任务是分析原故事文本 ${form.value.generated_story_text}， 用语言: ${form.value.language}生成 一份${form.value.style}风格完整、连贯、格式正确的分镜脚本`
+const result = await PromptAPI.apicoreGenerateTxt(prompt, form.value.model);
     
     const storyboardData = parseMarkdownJson(result);
 
@@ -1157,8 +656,6 @@ const generateStoryboardPrompts = async () => {
       ElMessage.success(`成功生成 ${storyboardData.scenes.length} 个分镜，请在弹窗中编辑确认。`);
       activeStep.value = 2;
 
-      // If there's no current story key, it means the user pasted text.
-      // We need to create a new story record for them.
       if (!currentStoryKey.value) {
         currentStoryKey.value = generateStoryKey();
         const topic = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0] || currentStoryKey.value;
@@ -1329,24 +826,29 @@ const generateVideo = async () => {
 
   videoLoading.value = true;
   videoRetryCount.value = 0;
+  generatedVideoUrl.value = '';
+  videoId.value = null;
+
   try {
     const prompt = form.value.generated_story_text;
+    const provider = videoProvider.value;
+    let options = { prompt };
     let data;
 
-    if (videoProvider.value === 'yunwu-sora') {
-      data = await VideosAPI.generateYunwuVideo(
-        prompt,
-        videoSeconds.value,
-        null, // No base image for now
-        videoSize.value,
-        videoWatermark.value,
-        videoIsPrivate.value,
-        form.value.token
-      );
+    if (provider === 'yunwu') {
+      options = {
+        ...options,
+        seconds: parseInt(videoSeconds.value, 10),
+        size: videoSize.value,
+        watermark: videoWatermark.value,
+        is_private: videoIsPrivate.value,
+      };
+      data = await VideosAPI.generateVideo('yunwu', options);
       videoId.value = data.id;
       videoStatus.value = data.status;
-      videoProgress.value = data.progress;
-    } else if (videoProvider.value === 'kie-sora') {
+      videoProgress.value = data.progress || 0;
+
+    } else if (provider === 'kie') {
       const aspectRatioMap = {
         '9x16': 'portrait',
         '16x9': 'landscape',
@@ -1354,14 +856,13 @@ const generateVideo = async () => {
         '4x3': 'landscape',
         '3x4': 'portrait',
       };
-      const aspectRatio = aspectRatioMap[videoSize.value] || 'landscape';
-      data = await VideosAPI.generateKieVideo(
-        prompt,
-        videoSeconds.value,
-        aspectRatio,
-        !videoWatermark.value,
-        kietoken.value
-      );
+      options = {
+        ...options,
+        n_frames: parseInt(videoSeconds.value, 10), // Assuming seconds can map to frames
+        aspect_ratio: aspectRatioMap[videoSize.value] || 'landscape',
+        remove_watermark: !videoWatermark.value,
+      };
+      data = await VideosAPI.generateVideo('kie', options);
       if (data.code === 200) {
         videoId.value = data.data.taskId;
         videoStatus.value = 'queued';
@@ -1383,7 +884,6 @@ const generateVideo = async () => {
 
 const checkVideoStatus = async (isPolling = false) => {
   if (!videoId.value) {
-    ElMessage.warning('没有视频ID');
     return;
   }
 
@@ -1395,12 +895,13 @@ const checkVideoStatus = async (isPolling = false) => {
   videoRetryCount.value++;
 
   try {
-    let data;
-    if (videoProvider.value === 'yunwu-sora') {
-      const statusResponse = await VideosAPI.getYunwuVideoStatus(videoId.value, form.value.token);
+    const provider = videoProvider.value;
+    const statusResponse = await VideosAPI.getVideoStatus(provider, videoId.value);
+    videoRetryCount.value = 0; // Reset retry count on success
+
+    if (provider === 'yunwu') {
       videoStatus.value = statusResponse.status;
       videoProgress.value = statusResponse.progress || 0;
-      videoRetryCount.value = 0; // Reset retry count on success
 
       if (statusResponse.status === 'completed') {
         if (statusResponse.video_url) {
@@ -1408,12 +909,11 @@ const checkVideoStatus = async (isPolling = false) => {
           ElMessage.success('视频已生成');
           showVideoResultDialog.value = true;
           videoLoading.value = false;
-
+          // Save file
           const now = new Date();
           const filename = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}.mp4`;
           await FileAPI.saveImage(form.value.ttv_story_type, filename, generatedVideoUrl.value);
           ElMessage.info(`视频已保存到文件夹: ${form.value.ttv_story_type}`);
-
         } else {
           ElMessage.error('视频生成成功，但未获取到视频URL。');
           videoLoading.value = false;
@@ -1422,16 +922,12 @@ const checkVideoStatus = async (isPolling = false) => {
         videoErrorMessage.value = statusResponse.error?.message || statusResponse.status;
         ElMessage.error(`视频生成失败: ${videoErrorMessage.value}`);
         videoLoading.value = false;
-      } else {
-        if (isPolling) {
-          videoPollingTimer.value = setTimeout(() => checkVideoStatus(true), 10000);
-        }
+      } else if (isPolling) {
+        videoPollingTimer.value = setTimeout(() => checkVideoStatus(true), 10000);
       }
-    } else if (videoProvider.value === 'kie-sora') {
-      data = await VideosAPI.getKieVideoStatus(videoId.value, kietoken.value);
-      videoRetryCount.value = 0; // Reset retry count on success
-      if (data.code === 200) {
-        const videoData = data.data;
+    } else if (provider === 'kie') {
+      if (statusResponse.code === 200) {
+        const videoData = statusResponse.data;
         videoStatus.value = videoData.state;
         if (videoData.state === 'success') {
           videoProgress.value = 100;
@@ -1441,7 +937,7 @@ const checkVideoStatus = async (isPolling = false) => {
             ElMessage.success('视频已生成');
             showVideoResultDialog.value = true;
             videoLoading.value = false;
-
+            // Save file
             const now = new Date();
             const filename = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}.mp4`;
             await FileAPI.saveImage(form.value.ttv_story_type, filename, generatedVideoUrl.value);
@@ -1451,13 +947,11 @@ const checkVideoStatus = async (isPolling = false) => {
           videoErrorMessage.value = videoData.failMsg;
           ElMessage.error(`视频生成失败: ${videoErrorMessage.value}`);
           videoLoading.value = false;
-        } else {
-          if (isPolling) {
-            videoPollingTimer.value = setTimeout(() => checkVideoStatus(true), 10000);
-          }
+        } else if (isPolling) {
+          videoPollingTimer.value = setTimeout(() => checkVideoStatus(true), 10000);
         }
       } else {
-        throw new Error(data.message || 'Failed to get video status');
+        throw new Error(statusResponse.message || 'Failed to get video status');
       }
     }
   } catch (e) {

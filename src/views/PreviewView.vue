@@ -6,7 +6,6 @@
         <el-option label="Gemini (Imagen)" value="gemini" />
         <el-option label="API Core (gemini-2.5-flash-image)" value="apicore" />
       </el-select>
-      <el-input v-if="provider==='apicore'" v-model="token" size="small" style="width:280px" placeholder="填入 API Token" />
       <el-button type="primary" @click="doGenerate" :loading="loading">批量生成图片</el-button>
       <el-button type="success" @click="goCompose" :disabled="images.length===0">去合成 ({{ images.length }})</el-button>
     </div>
@@ -33,18 +32,16 @@ const loading = ref(false)
 const images = ref([])
 const selected = ref({})
 const provider = ref('gemini')
-const token = ref(localStorage.getItem('apicore_token')||'')
 
 const doGenerate = async ()=>{
   loading.value = true
   try{
     const arr = JSON.parse(sessionStorage.getItem('prompts')||'[]')
     if(provider.value === 'apicore'){
-      localStorage.setItem('apicore_token', token.value)
-      const urls = await ImagesAPI.apicoreGenerateBatch(arr, token.value)
+      const urls = await ImagesAPI.apicoreGenerateBatch(arr)
       images.value = urls.filter(Boolean)
     } else {
-      const { urls } = await ImagesAPI.generate(arr, '16:9', '1K', provider.value, token.value)
+      const { urls } = await ImagesAPI.generate(arr, '16:9', '1K', provider.value)
       // urls.forEach(url=>{
       //   if(url.indexOf('http') === -1){
       //     url = `${import.meta.env.VITE_API_BASE}${url}`
@@ -61,7 +58,7 @@ const regenerate = async (idx)=>{
   try{
     const arr = JSON.parse(sessionStorage.getItem('prompts')||'[]')
     const prompt = arr[idx] || arr[0]
-    const url = await ImagesAPI.apicoreGenerateOne(prompt, token.value)
+    const url = await ImagesAPI.apicoreGenerateOne(prompt)
     if(url){ images.value[idx] = url; sessionStorage.setItem('images', JSON.stringify(images.value)) }
   }catch(e){ console.error(e) }
 }

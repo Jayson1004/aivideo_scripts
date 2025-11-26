@@ -4,7 +4,7 @@ import httpx
 import aiofiles
 from fastapi import FastAPI, HTTPException, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 from typing import List, Dict, Any
@@ -42,6 +42,21 @@ class TextGenerateRequest(BaseModel):
     model: str
     token: str
 
+class BookwormContentPart(BaseModel):
+    type: str
+    text: str | None = None
+    image_url: Dict[str, str] | None = None
+
+class BookwormMessage(BaseModel):
+    role: str
+    content: List[BookwormContentPart]
+
+class BookwormRequest(BaseModel):
+    model: str
+    stream: bool
+    messages: List[BookwormMessage]
+    max_tokens: int
+    token: str
 
 # --- FastAPI Application ---
 app = FastAPI()
@@ -102,6 +117,16 @@ async def generate_text(request: TextGenerateRequest):
             "max_tokens": 8000,
             "thinking": {"type": "enabled", "budget_tokens": 5200}
         }
+    elif 'gemini' in request.model:
+        url = f"{base_url}/v1/chat/completions"
+        payload = {
+            "model": request.model,
+            "messages": [{"role": "user", "content": request.prompt}],
+            "temperature": 0.1,
+            "top_p": 1,
+            "stream": False,
+            "reasoning_effort": "low"
+        }
     else:
         raise HTTPException(status_code=400, detail=f"Unsupported model: {request.model}")
 
@@ -121,6 +146,10 @@ async def generate_text(request: TextGenerateRequest):
                         if el.get('type') == "message" and el.get('content') and el['content'][0].get('type') == "output_text":
                             result_text = el['content'][0].get('text', '')
                             break # Found the text, no need to continue loop
+            elif 'gemini' in request.model:
+                if choices := data.get('choices'):
+                    if message := choices[0].get('message'):
+                        result_text = message.get('content', '')
             
             return result_text
 
@@ -131,6 +160,46 @@ async def generate_text(request: TextGenerateRequest):
         except Exception as e:
             # Catch any other unexpected errors (e.g., JSONDecodeError)
             raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
+@app.post("/api/bookworm/analyze", response_class=PlainTextResponse)
+async def bookworm_analyze(request: BookwormRequest):
+    if not request.token:
+        raise HTTPException(status_code=400, detail="API token is required")
+
+    headers = {
+        'Authorization': f'Bearer {request.token}',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+    }
+    
+    payload = {
+        "model": request.model,
+        "stream": False,
+        "messages": [msg.dict() for msg in request.messages],
+        "max_tokens": request.max_tokens,
+    }
+
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        try:
+            response = await client.post("https://api.apimart.ai/v1/chat/completions", json=payload, headers=headers)
+            response.raise_for_status()
+            # Assuming the response is JSON and we need to extract text from it.
+            # This part might need adjustment based on the actual API response structure.
+            data = response.json()
+            # A plausible structure based on OpenAI's format
+            if choices := data.get("choices"):
+                if message := choices[0].get("message"):
+                    return message.get("content", "")
+            return "" # Return empty string if no content found
+        except httpx.RequestError as e:
+            raise HTTPException(status_code=502, detail=f"Error calling Bookworm API: {e}")
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=f"Bookworm API returned an error: {e.response.text}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
+
 
 
 @app.get("/api/config/save-path")
@@ -308,7 +377,7 @@ async def generate_external_image(request: ExternalGenerateRequest):
                     ]
 
                 gemini_headers = {'Authorization': f'Bearer {request.token}', 'Content-Type': 'application/json'}
-                response = await client.post(f"{base_url}/v1beta/models/gemini-2.5-flash-image:generateContent?key=", json=payload, headers=gemini_headers)
+                response = await client.post(f"{base_url}/v1beta/models/{request.model}:generateContent?key=", json=payload, headers=gemini_headers)
                 response.raise_for_status()
                 api_data = response.json()
 
@@ -336,6 +405,98 @@ async def generate_external_image(request: ExternalGenerateRequest):
 @app.options("/api/images/generate-external")
 async def options_generate_external_image():
     return Response(status_code=200)
+
+
+# --- Pydantic Models for Video Generation ---
+class VideoGenerateRequest(BaseModel):
+    provider: str
+    token: str
+    prompt: str
+    seconds: int | None = None
+    size: str | None = None
+    watermark: bool | None = None
+    is_private: bool | None = None
+    n_frames: int | None = None
+    aspect_ratio: str | None = None
+    remove_watermark: bool | None = None
+
+
+# --- Video Generation Endpoints ---
+
+@app.post("/api/videos/generate")
+async def generate_video(request: VideoGenerateRequest):
+    if not request.token:
+        raise HTTPException(status_code=400, detail="API token is required")
+
+    headers = {'Authorization': f'Bearer {request.token}'}
+    
+    try:
+        async with httpx.AsyncClient(timeout=600.0) as client:
+            if request.provider == "yunwu":
+                data = {
+                    'model': 'sora-2',
+                    'prompt': request.prompt,
+                    'seconds': request.seconds,
+                    'size': request.size,
+                    'watermark': request.watermark,
+                    'private': request.is_private,
+                }
+                # Yunwu uses multipart/form-data
+                response = await client.post("http://yunwu.ai/v1/videos", data=data, headers=headers)
+
+            elif request.provider == "kie":
+                payload = {
+                    'model': 'sora-2-text-to-video',
+                    'callBackUrl': '',
+                    'input': {
+                        'prompt': request.prompt,
+                        'aspect_ratio': request.aspect_ratio,
+                        'n_frames': str(request.n_frames),
+                        'remove_watermark': request.remove_watermark,
+                    },
+                }
+                headers['Content-Type'] = 'application/json'
+                response = await client.post("https://api.kie.ai/api/v1/jobs/createTask", json=payload, headers=headers)
+            
+            else:
+                raise HTTPException(status_code=400, detail=f"Unsupported video provider: {request.provider}")
+
+            response.raise_for_status()
+            return response.json()
+
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Error calling external video API: {e}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"External video API returned an error: {e.response.text}")
+
+
+@app.get("/api/videos/status/{provider}/{task_id}")
+async def get_video_status(provider: str, task_id: str, request: Request):
+    token = request.headers.get("Authorization")
+    if not token:
+        raise HTTPException(status_code=401, detail="Authorization token is required")
+
+    headers = {'Authorization': token} # The token from frontend is "Bearer <token>"
+    
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            if provider == "yunwu":
+                url = f"http://yunwu.ai/v1/videos/{task_id}"
+            elif provider == "kie":
+                url = f"https://api.kie.ai/api/v1/jobs/recordInfo?taskId={task_id}"
+            else:
+                raise HTTPException(status_code=400, detail=f"Unsupported video provider: {provider}")
+
+            response = await client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.json()
+            
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Error calling external status API: {e}")
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail=f"External status API returned an error: {e.response.text}")
+
+
 
 
 @app.post("/api/generate-storyboard")

@@ -1,7 +1,7 @@
 import axios from 'axios';
-import { GoogleGenAI, PersonGeneration } from '@google/genai';
-import { radioEmits } from 'element-plus';
+import { useSettings } from '../composables/useSettings';
 
+const { settings } = useSettings();
 
 const baseURL = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
@@ -44,7 +44,8 @@ const dowloadImage = (url,mimeType='image/png', index) =>{
 }
 
 export const ImagesAPI = {
-  generate: async (prompts, aspectRatio = '16:9', imageSize = '1K', provider = 'gemini', token = '') => {
+  generate: async (prompts, aspectRatio = '16:9', imageSize = '1K', provider = 'gemini') => {
+    const token = provider === 'gemini' ? settings.value.geminiApiKey : '';
     const { data } = await api.post('/images/generate', {
       prompts,
       aspect_ratio: aspectRatio,
@@ -67,16 +68,16 @@ export const ImagesAPI = {
     return { ...data, urls };
   },
   
-  apicoreGenerateBatchTxt: async (prompts, token, model = 'gemini-2.5-flash-image') => {
+  apicoreGenerateBatchTxt: async (prompts, model = 'gemini-2.5-flash-image') => {
     const texts = [];
     for (const p of prompts) {
-      try { texts.push(await ImagesAPI.apicoreGenerateTxt(p, token, model)); }
+      try { texts.push(await ImagesAPI.apicoreGenerateTxt(p, model)); }
       catch (e) { console.error('apicore batch error:', e); texts.push(null); }
     }
     return texts;
   },
   // This function now delegates the complex logic to the backend.
-  apicoreGenerateOne: async (prompt, token, model = 'gemini-2.5-flash-image-preview', aspectRatio = '16:9', size = '1*1', baseimgs=[], image_style, image_quality, returnBase64 = false) => {
+  apicoreGenerateOne: async (prompt, model, token, aspectRatio, size, baseimgs = [], image_style, image_quality, returnBase64 = false) => {
     if (!token) throw new Error('API token is required');
 
     try {
@@ -86,7 +87,7 @@ export const ImagesAPI = {
         model,
         aspect_ratio: aspectRatio,
         size,
-        base_imgs: baseimgs, // Assuming baseimgs are in the format { name: string, url: string (dataURL) }
+        base_imgs: baseimgs,
         image_style,
         image_quality,
         return_base64: returnBase64
@@ -102,7 +103,8 @@ export const ImagesAPI = {
 }
 
 export const PromptAPI = {
-  apicoreGenerateTxt: async (prompt, token, model) => {
+  apicoreGenerateTxt: async (prompt, model) => {
+    const token = settings.value.yunwuApiKey;
     if (!token) throw new Error('API token is required');
     try {
       const response = await api.post('/api/text/generate', {
@@ -133,95 +135,58 @@ export const FileAPI = {
   }
 };
 
-export const VideosAPI = {
-  generateYunwuVideo: async (prompt, seconds, imageUrl, size, watermark, isPrivate, token) => {
+
+export const BookwormAPI = {
+  analyze: async (payload) => {
+    const token = settings.value.bookwormApiKey;
     if (!token) throw new Error('API token is required');
 
-    const formData = new FormData();
-    formData.append('model', 'sora-2');
-    formData.append('prompt', prompt);
-    formData.append('seconds', seconds);
-    formData.append('size', size);
-    formData.append('watermark', watermark);
-    formData.append('private', isPrivate);
-
-    if (imageUrl) {
-      // Fetch the image and convert it to a Blob
-      const imageResponse = await fetch(imageUrl);
-      const imageBlob = await imageResponse.blob();
-      const imageFile = new File([imageBlob], "input_reference.png", { type: 'image/png' });
-      formData.append('input_reference', imageFile);
-    }
-
-    const { data } = await axios.post('/v1/videos', formData, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'multipart/form-data',
-      },
-      timeout: 600000, // 10 minutes timeout
-    });
-
+    const { data } = await api.post('/api/bookworm/analyze', { ...payload, token });
     return data;
   },
+};
 
-  getYunwuVideoStatus: async (videoId, token) => {
-    if (!token) throw new Error('API token is required');
-
-    const { data } = await axios.get(`/v1/videos/${videoId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-      timeout: 600000, // 10 minutes timeout
-    });
-
-    return data; // Return the detail object which contains status and progress
-  },
-
-  getYunwuVideoContent: async (videoId, token) => {
-    if (!token) throw new Error('API token is required');
-
-    const { data } = await axios.get(`/v1/videos/${videoId}/content`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-
-    return data; // This should contain the video_url
-  },
-
-  generateKieVideo: async (prompt, n_frames, aspect_ratio, remove_watermark, token) => {
-    if (!token) throw new Error('API token is required');
+export const VideosAPI = {
+  /**
+   * @param {'yunwu' | 'kie'} provider
+   * @param {object} options
+   */
+  generateVideo: async (provider, options = {}) => {
+    const token = provider === 'yunwu' 
+      ? settings.value.yunwuApiKey 
+      : settings.value.kieApiKey;
+    if (!token) throw new Error('API token is required for the selected video provider.');
 
     const payload = {
-      model: 'sora-2-text-to-video',
-      callBackUrl: '',
-      input: {
-        prompt,
-        aspect_ratio,
-        n_frames: n_frames+'',
-        remove_watermark,
-      },
+      provider,
+      token,
+      ...options
     };
-
-    const { data } = await axios.post('/api/v1/jobs/createTask', payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-      },
-    });
-
+// kie const { data } = await axios.post('/api/v1/jobs/createTask', payload, {                                                                                              │
+// │ 225 -       headers: {                                                                                                                                                         │
+//   │ 226 -         'Content-Type': 'application/json',                                                                                                                              │
+//   │ 227 -         'Authorization': `Bearer ${token}`,                                                                                                                              │
+//   │ 228 -       },                                                                                                                                                                 │
+//   │ 229 -     });                                                                                                                                                                  │
+//   │ 230 -                 
+    const { data } = await api.post('/api/videos/generate', payload);
     return data;
   },
 
-  getKieVideoStatus: async (taskId, token) => {
-    if (!token) throw new Error('API token is required');
-
-    const { data } = await axios.get(`/api/v1/jobs/recordInfo?taskId=${taskId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
+  /**
+   * @param {'yunwu' | 'kie'} provider
+   * @param {string} videoId
+   */
+  getVideoStatus: async (provider, videoId) => {
+    const token = provider === 'yunwu' 
+      ? settings.value.yunwuApiKey 
+      : settings.value.kieApiKey;
+    if (!token) throw new Error('API token is required for the selected video provider.');
+// axios.get(`/v1/videos/${videoId}`
+// Kie  xios.get(`/api/v1/jobs/recordInfo?taskId=${taskId}
+    const { data } = await api.get(`/api/videos/status/${provider}/${videoId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
     });
-
     return data;
   }
 };
