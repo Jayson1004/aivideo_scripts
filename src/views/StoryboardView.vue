@@ -4,49 +4,40 @@
       <template #extra>
         <div style="display: flex; align-items: center; gap: 16px;">
           <el-button @click="showHistoryDialog = true">历史记录</el-button>
-          <el-button @click="exportTexts" v-if="scenes.length > 0">一键导出文案</el-button>
+          <el-button @click="exportToCSV" v-if="scenes.length > 0">导出为CSV</el-button>
           <el-button @click="router.push('/prompt-generator')">返回提示词生成</el-button>
         </div>
       </template>
     </el-page-header>
-    
+
     <el-card style="margin-top:12px;">
-      
-      <el-form :model="form" label-width="80px" inline>
+
+      <el-form label-width="80px" inline>
         <el-form-item label="提供方">
           <el-select v-model="provider" placeholder="提供方" style="width:300px">
-            <!-- $0.048000 -->
             <el-option label="yunwu(gpt-image-1-all)($0.08)(质量好)" value="gpt-image-1-all" />
             <el-option label="yunwu(dall-e-3)($0.048,不能垫图,限时特惠，质量不太好)" value="dall-e-3" />
             <el-option label="yunwu(gpt-4o-image-vip)($0.12)(质量好)" value="gpt-4o-image-vip" />
-            <!-- sora-image -->
-            <!-- $0.09 -->
             <el-option label="yunwu(gemini-2.5-flash-image-preview)($0.09)(质量好)" value="gemini-2.5-flash-image" />
-
-            
             <el-option label="yunwu(gemini-3-pro-image-preview)($0.318)(质量好)" value="gemini-3-pro-image-preview" />
-            <!-- seedream $0.240000-->
             <el-option label="yunwu(seedream)($0.24)" value="doubao-seedream-4-0-250828" />
-
-            <!-- gemini 官方生图 -->
             <el-option label="Gemini Imagen (官方)" value="gemini-imagen" />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="图片设置">
-          
-          <el-select v-if="provider.includes('gemini')" v-model="aspectRatio" placeholder="图片比例" style="width:160px; margin-right: 8px;">
+          <el-select v-if="provider.includes('gemini')" v-model="aspectRatio" placeholder="图片比例"
+            style="width:160px; margin-right: 8px;">
             <el-option label="16:9" value="16:9" />
             <el-option label="9:16" value="9:16" />
             <el-option label="1:1" value="1:1" />
           </el-select>
-          <el-select v-if="provider.includes('gemini-imagen') || provider.includes('seedream')" v-model="imageSize" placeholder="图片尺寸" style="width:160px">
-            
+          <el-select v-if="provider.includes('gemini-imagen') || provider.includes('seedream')" v-model="imageSize"
+            placeholder="图片尺寸" style="width:160px">
             <el-option label="1K" value="1K" />
             <el-option label="2K" value="2K" />
             <el-option label="4K" value="4K" />
           </el-select>
-          <!-- gpt 生图 -->
           <el-select v-if="provider.includes('gpt-')" v-model="imageSize" placeholder="图片尺寸" style="width:160px">
             <el-option label="1536x1024(4:3)" value="1536x1024" />
             <el-option label="1024x1536(3:4)" value="1024x1536" />
@@ -68,52 +59,12 @@
             <el-option v-for="style in styleOptions" :key="style.value" :label="style.label" :value="style.value" />
           </el-select>
         </el-form-item>
-        <!-- image_quality 高清开关 -->
         <el-form-item label="图片质量" v-if="provider.includes('dall-e-') || provider.includes('gpt-')">
-          <el-switch
-            v-model="image_quality"
-            active-text="高清"
-            inactive-text="普通"
-            active-value="hd"
-            inactive-value="standard"
-          />
+          <el-switch v-model="image_quality" active-text="高清" inactive-text="普通" active-value="hd"
+            inactive-value="standard" />
         </el-form-item>
         <el-form-item label="启用垫图">
           <el-switch v-model="enableBaseImage" />
-        </el-form-item>
-        <el-form-item label="全局垫图">
-          <el-upload
-            action="#"
-            list-type="picture-card"
-            :auto-upload="false"
-            :on-change="handleGlobalImageChange"
-            :on-remove="handleGlobalImageRemove"
-            :file-list="globalBaseImages"
-            multiple
-          >
-            <el-icon><Plus /></el-icon>
-            <template #file="{ file }">
-              <div >
-                <img class="el-upload-list__item-thumbnail" :src="file.url" alt="" />
-                <span class="el-upload-list__item-actions">
-                  <span
-                    class="el-upload-list__item-preview"
-                    @click="previewImage(file.url)"
-                  >
-                    <el-icon><zoom-in /></el-icon>
-                  </span>
-                  <span
-                    v-if="!file.disabled"
-                    class="el-upload-list__item-delete"
-                    @click="handleGlobalImageRemove(file)"
-                  >
-                    <el-icon><Delete /></el-icon>
-                  </span>
-                </span>
-              </div>
-              <el-input v-model="file.name" @keydown.delete.stop placeholder="输入名称" size="small" style="position: absolute; left:0; width: 130px; margin-top: 5px;" @input="(value) => { const img = globalBaseImages.find(i => i.uid === file.uid); if (img) img.name = value; }" />
-            </template>
-          </el-upload>
         </el-form-item>
         <el-form-item label="视频设置">
           <el-select v-model="videoProvider" placeholder="视频提供方" style="width:160px; margin-right: 8px;">
@@ -131,43 +82,56 @@
             <el-option label="10s" value="10" />
             <el-option label="15s" value="15" />
           </el-select>
-          <el-switch v-model="videoIsPrivate" active-text="私有" style="margin-right: 8px;"/>
-          <el-switch v-model="videoWatermark" active-text="水印"/>
+          <el-switch v-model="videoIsPrivate" active-text="私有" style="margin-right: 8px;" />
+          <el-switch v-model="videoWatermark" active-text="水印" />
         </el-form-item>
       </el-form>
 
       <el-divider />
 
       <div v-if="peoples.length > 0" style="margin-bottom: 12px;">
-        <h3>角色垫图生成</h3>
-        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-          <el-card v-for="(person, index) in peoples" :key="index" style="width: 200px;">
+        <h3>角色垫图</h3>
+        <div style="display: flex; flex-wrap: wrap; gap: 16px;">
+          <el-card v-for="person in peoples" :key="person.name" style="width: 240px;">
             <template #header>
               <div class="card-header">
                 <span>{{ person.name }}</span>
-                <el-button type="primary" size="small" @click="generateCharacterImage(person)" :loading="characterImageLoading[person.name]">生成图片</el-button>
               </div>
             </template>
-            <p>{{ person.description }}</p>
+            <div class="character-card-content">
+              <p class="character-desc">{{ person.description }}</p>
+              <el-image v-if="person.url" :src="person.url" fit="cover" class="character-image" @click="previewImage(person)"/>
+              <el-upload
+                v-else
+                action="#"
+                accept=".jpg,.jpeg,.png,.webp"
+                :show-file-list="false"
+                :auto-upload="false"
+                :on-change="(file) => handleCharacterImageChange(file, person)"
+                class="character-uploader"
+              >
+                <el-icon><Plus /></el-icon>
+              </el-upload>
+              <div class="character-actions">
+                <el-button type="primary" size="small" @click="generateCharacterImage(person)" :loading="person.loading">生成</el-button>
+                <el-button type="danger" size="small" @click="handleCharacterImageRemove(person)" :disabled="!person.url">删除</el-button>
+              </div>
+            </div>
           </el-card>
         </div>
       </div>
 
       <div class="actions-bar">
-        <el-checkbox 
-          v-model="isAllSelected" 
-          :indeterminate="isIndeterminate"
-          @change="handleSelectAllChange"
-        >
+        <el-checkbox v-model="isAllSelected" :indeterminate="isIndeterminate" @change="handleSelectAllChange">
           全选 ({{ selectedScenes.size }}/{{ scenes.length }})
         </el-checkbox>
         <el-button @click="invertSelection" text>反选</el-button>
         <el-divider direction="vertical" />
-        <el-button @click="add">新增分镜</el-button>
-        <input type="file" ref="fileInput" @change="handleFileSelected" style="display: none" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" />
+        <input type="file" ref="fileInput" @change="handleFileSelected" style="display: none"
+          accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" />
         <el-button @click="handleImportClick">从Excel导入</el-button>
         <el-button @click="clearAll">清空所有</el-button>
-        <el-button type="primary" :loading="isBatchGenerating" @click="generateAllImages">批量生成选中图片</el-button>
+        <el-button type="primary" :loading="isBatchGenerating" :disabled="!selectedScenes.length" @click="generateAllImages">批量生成选中图片</el-button>
         <el-button type="success" @click="openGlobalModificationDialog">智能修改所有分镜</el-button>
       </div>
 
@@ -183,7 +147,7 @@
               </div>
             </div>
           </template>
-          
+
           <div class="scene-content">
             <div class="prompt-fields">
               <el-input v-model="scene.image_prompt" type="textarea" :rows="4" placeholder="图片提示词..." />
@@ -193,28 +157,39 @@
             </div>
             <div class="media-previews">
               <div class="image-preview-wrapper">
-                <img v-if="scene.image_url" :src="scene.image_url" class="preview-image" @click="previewImage(scene, index)" />
+                <img v-if="scene.image_url" :src="scene.image_url" class="preview-image"
+                  @click="previewImage({ url: scene.image_url }, index)" />
                 <div v-else class="preview-placeholder">暂无图片</div>
                 <div class="image-actions">
-                  <el-button size="small" @click="generateImageForScene(index)" :loading="imageLoading[index]">生成图片</el-button>
-                  <el-button size="small" type="danger" plain @click="removeImage(index)" :disabled="!scene.image_url">删除图片</el-button>
+                  <el-button size="small" @click="generateImageForScene(index)"
+                    :loading="imageLoading[index]">生成图片</el-button>
+                  <el-button size="small" type="danger" plain @click="removeImage(index)"
+                    :disabled="!scene.image_url">删除图片</el-button>
                 </div>
               </div>
-               <div class="video-preview-wrapper">
-                <div v-if="scene.videoId" class="video-status-overlay">
-                  <p>ID: {{ scene.videoId.slice(0, 8) }}...</p>
-                   <el-tooltip :content="scene.videoErrorMessage" placement="top" v-if="scene.videoErrorMessage">
-                      <p style="color: red;">状态: {{ scene.videoStatus }}</p>
-                    </el-tooltip>
-                  <p v-else>状态: {{ scene.videoStatus }}</p>
-                  <el-progress :percentage="scene.videoProgress" v-if="['pending', 'processing'].includes(scene.videoStatus)" :stroke-width="5" />
-                  <a :href="scene.videoUrl" target="_blank" v-if="scene.videoUrl" class="view-video-link">查看视频</a>
-                   <el-button size="small" @click="checkVideoStatus(index)" :loading="videoGenerationLoading[index]" v-if="!scene.videoUrl && !['failed', 'error', 'fail', 'completed', 'success'].includes(scene.videoStatus)">刷新</el-button>
-                   <el-button size="small" @click="regenerateVideoForScene(index)" :loading="videoGenerationLoading[index]" v-if="['failed', 'error', 'fail'].includes(scene.videoStatus)">重试</el-button>
+              <div class="video-preview-wrapper">
+                <div v-if="scene.videoUrl" style="position: relative;">
+                  <video :src="scene.videoUrl" controls class="preview-video"></video>
+                  <el-button :icon="FullScreen" circle text @click="previewVideo(scene)"
+                    style="position: absolute; top: 5px; right: 5px; background: rgba(0,0,0,0.5);" />
                 </div>
-                <video v-if="scene.video_url" :src="scene.video_url" controls class="preview-video"></video>
-                <div v-else-if="!scene.videoId" class="preview-placeholder">
-                  <el-button size="small" @click="generateVideoForScene(index)" :loading="videoGenerationLoading[index]">生成视频</el-button>
+                <div v-else-if="scene.videoId" class="video-status-overlay">
+                  <p>ID: {{ scene.videoId.slice(0, 8) }}...</p>
+                  <el-tooltip :content="scene.videoErrorMessage" placement="top" v-if="scene.videoErrorMessage">
+                    <p style="color: red;">状态: {{ scene.videoStatus }}</p>
+                  </el-tooltip>
+                  <p v-else>状态: {{ scene.videoStatus }}</p>
+                  <el-progress :percentage="scene.videoProgress"
+                    v-if="['pending', 'processing'].includes(scene.videoStatus)" :stroke-width="5" />
+                  <el-button size="small" @click="checkVideoStatus(index)" :loading="videoGenerationLoading[index]"
+                    v-if="!['failed', 'error', 'fail', 'completed', 'success'].includes(scene.videoStatus)">刷新</el-button>
+                  <el-button size="small" @click="regenerateVideoForScene(index)"
+                    :loading="videoGenerationLoading[index]"
+                    v-if="['failed', 'error', 'fail'].includes(scene.videoStatus)">重试</el-button>
+                </div>
+                <div v-else class="preview-placeholder">
+                  <el-button size="small" @click="generateVideoForScene(index)"
+                    :loading="videoGenerationLoading[index]">生成视频</el-button>
                 </div>
               </div>
             </div>
@@ -223,12 +198,11 @@
       </div>
       <div style="margin-top:12px; display:flex; gap:8px;">
         <el-button @click="add">新增分镜</el-button>
-        <input type="file" ref="fileInput" @change="handleFileSelected" style="display: none" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" />
-        <el-button @click="handleImportClick">从Excel导入</el-button>
-        <el-button @click="clearAll">清空所有</el-button>
-        <el-button type="primary" :loading="isBatchGenerating" @click="generateAllImages">批量生成所有图片</el-button>
-        <el-button type="success" @click="showModificationDialog = true">智能修改分镜</el-button>
-        
+        <input type="file" ref="fileInput" @change="handleFileSelected" style="display: none"
+          accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" />
+        <!-- <el-button type="primary" :loading="isBatchGenerating" @click="generateAllImages">批量生成所有图片</el-button> -->
+        <!-- <el-button type="success" @click="showModificationDialog = true">智能修改分镜</el-button> -->
+
       </div>
     </el-card>
 
@@ -236,7 +210,7 @@
     <el-dialog v-model="showImagePreview" title="图片预览" width="70%">
       <img v-if="previewImageUrl" :src="previewImageUrl" style="width:100%; height:auto; border-radius: 8px;" />
       <template #footer>
-        <el-button @click="showImagePreview=false">关闭</el-button>
+        <el-button @click="showImagePreview = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -257,17 +231,35 @@
 
     <!-- Modification Dialog -->
     <el-dialog v-model="showModificationDialog" title="智能修改分镜" width="50%">
-      <el-input
-        v-model="modificationPrompt"
-        :rows="5"
-        type="textarea"
-        placeholder="请输入修改要求..."
-      />
+      <el-form-item label="选择模型">
+        <el-select v-model="modificationModel" placeholder="选择模型" style="width:100%">
+          <el-option v-for="model in modificationModels" :key="model.value" :label="model.label" :value="model.value" />
+        </el-select>
+      </el-form-item>
+      <el-input v-model="modificationPrompt" :rows="5" type="textarea"
+        placeholder="例如：将场景改为夜晚、添加雨效、调整人物表情、改变镜头角度等..." />
       <template #footer>
         <el-button @click="showModificationDialog = false">取消</el-button>
         <el-button type="primary" @click="handleModificationConfirm" :loading="isModifying">
           确认
         </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Video Preview Dialog -->
+    <el-dialog v-model="showVideoPreviewDialog" :title="`分镜 #${viewingVideoScene?.index + 1} 视频预览`" width="60%">
+      <div v-if="viewingVideoScene">
+        <video :src="viewingVideoScene.videoUrl" controls style="width: 100%;"></video>
+        <el-descriptions title="视频信息" :column="2" border size="small" style="margin-top: 16px;">
+          <el-descriptions-item label="视频提示词">{{ viewingVideoScene.single_frame_video_prompt || 'N/A' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="图片提示词">{{ viewingVideoScene.image_prompt || 'N/A' }}</el-descriptions-item>
+          <el-descriptions-item label="提供方">{{ viewingVideoScene.videoProvider }}</el-descriptions-item>
+          <el-descriptions-item label="视频ID">{{ viewingVideoScene.videoId }}</el-descriptions-item>
+        </el-descriptions>
+      </div>
+      <template #footer>
+        <el-button @click="showVideoPreviewDialog = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>
@@ -278,7 +270,7 @@ import { ref, onMounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ImagesAPI, FileAPI, VideosAPI, PromptAPI } from '../services/api'
-import { Delete, Plus, ZoomIn, Edit } from '@element-plus/icons-vue'
+import { Delete, Plus, ZoomIn, Edit, FullScreen } from '@element-plus/icons-vue'
 import { useSettings } from '../composables/useSettings'
 import * as XLSX from 'xlsx';
 
@@ -293,19 +285,84 @@ const createNewScene = (data = {}) => ({
   dual_frame_video_prompt: '',
   subtitle_text: '',
   image_url: null,
-  video_url: null,
+  videoUrl: null,
   videoId: null,
   videoStatus: '',
   videoProgress: 0,
   videoProvider: '',
   videoErrorMessage: '',
-  selected: false, 
+  selected: false,
   generationDetails: {},
   ...data,
 });
 
 const scenes = ref([createNewScene()]);
 const selectedScenes = ref(new Set());
+const peoples = ref([]);
+
+// --- Character Extraction and Management ---
+const updatePeoplesFromScenes = (scenesToParse) => {
+  const characterMap = new Map();
+  // Regex to handle both "Name(Description)" and "角色：Name(Description)"
+  // The name part `([\u4e00-\u9fa5a-zA-Z0-9]+?)` ensures it's a continuous sequence of allowed characters.
+  const regex = /(?:角色：)?([\u4e00-\u9fa5a-zA-Z0-9]+?)[(（](.*?)[)）]/g;
+
+  for (const scene of scenesToParse) {
+    if (scene.image_prompt) {
+      let match;
+      while ((match = regex.exec(scene.image_prompt)) !== null) {
+        const name = match[1].trim();
+        const description = match[2].trim();
+        if (name && !characterMap.has(name)) {
+          characterMap.set(name, { name, description, url: null, loading: false });
+        }
+      }
+    }
+  }
+  peoples.value = Array.from(characterMap.values());
+};
+
+const handleCharacterImageChange = (file, person) => {
+  const personToUpdate = peoples.value.find(p => p.name === person.name);
+  if (personToUpdate) {
+    personToUpdate.url = URL.createObjectURL(file.raw);
+  }
+};
+
+const handleCharacterImageRemove = (person) => {
+  const personToUpdate = peoples.value.find(p => p.name === person.name);
+  if (personToUpdate) {
+    personToUpdate.url = null;
+  }
+};
+
+const generateCharacterImage = async (person) => {
+  const personToUpdate = peoples.value.find(p => p.name === person.name);
+  if (!personToUpdate || !personToUpdate.description) {
+    return ElMessage.warning('角色描述不能为空');
+  }
+  personToUpdate.loading = true;
+  try {
+    const token = provider.value.includes('gemini-imagen') ? settings.value.geminiApiKey : settings.value.yunwuApiKey;
+    const model = provider.value;
+    const imageUrl = await ImagesAPI.apicoreGenerateOne(personToUpdate.description, model, token, '1:1', imageSize.value, [], image_style.value, image_quality.value);
+    if (imageUrl) {
+      personToUpdate.url = imageUrl;
+      ElMessage.success(`角色 ${person.name} 图片生成成功`);
+    }
+  } catch (e) {
+    console.error(e);
+    ElMessage.error(`角色 ${person.name} 图片生成失败: ${e.message}`);
+  } finally {
+    personToUpdate.loading = false;
+  }
+};
+
+const globalBaseImages = computed(() =>
+  peoples.value
+    .filter(p => p.url)
+    .map(p => ({ name: p.name, url: p.url, uid: p.name }))
+);
 
 // --- Selection Logic ---
 const isAllSelected = computed({
@@ -351,7 +408,7 @@ const handleFileSelected = (event) => {
       const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
       if (json.length < 2) return ElMessage.warning('文件为空或只有标题行');
       if (scenes.value.length === 1 && !scenes.value[0].image_prompt && !scenes.value[0].single_frame_video_prompt) scenes.value = [];
-      
+
       let importedCount = 0;
       for (let i = 1; i < json.length; i++) {
         const row = json[i];
@@ -377,9 +434,9 @@ const handleFileSelected = (event) => {
 
 // --- Refs for UI state and settings ---
 const provider = ref('gpt-image-1-all')
-const imageSize = ref('1024x1792')
-const aspectRatio = ref('9:16')
-const imageStyle = ref('') 
+const imageSize = ref('1024x1024')
+const aspectRatio = ref('1:1')
+const imageStyle = ref('')
 const styleOptions = ref([{ label: '无风格', value: '' }, { label: '3D卡通', value: 'Cartoon Games 3D' }, { label: '索尼影片', value: 'Sony Pictures Animation' }, { label: '动漫', value: 'anime style' }, { label: '像素艺术', value: 'pixel art style' }, { label: '低多边形', value: 'low poly style' }, { label: '写实', value: 'photorealistic' }, { label: 'Roblox像素风', value: 'Roblox pixel' }])
 const image_style = ref('natural')
 const image_quality = ref('standard')
@@ -390,23 +447,31 @@ const previewImageUrl = ref('')
 const viewingScene = ref(null);
 const showHistoryDialog = ref(false)
 const savedStories = ref([])
-const globalBaseImages = ref([]) 
-const enableBaseImage = ref(true) 
-const characterImageLoading = ref({}) 
+const enableBaseImage = ref(true)
 const currentStoryKey = ref(null)
-const peoples = ref([])
 const videoProvider = ref('yunwu-sora')
 const videoSize = ref('9x16')
 const videoSeconds = ref('10')
 const videoIsPrivate = ref(true)
 const videoWatermark = ref(false)
-const videoGenerationLoading = ref({})
-const videoPollingTimers = ref({}) 
-const imageLoading = ref({})
+const videoGenerationLoading = ref({}) // Stores loading state for video generation per scene
+const videoPollingTimers = ref({}) // Stores timers for polling video status
+const imageLoading = ref({}) // Stores loading state for image generation per scene
 const showModificationDialog = ref(false)
 const modificationPrompt = ref('')
 const isModifying = ref(false)
-const modifyingSceneIndex = ref(null) 
+const modifyingSceneIndex = ref(null) // Index of the scene being modified, null for global modification
+const modificationModel = ref('gpt-5-2025-08-07');
+const modificationModels = ref([
+  { label: 'GPT-5 (Default)', value: 'gpt-5-2025-08-07' },
+  { label: 'Gemini 3 Pro', value: 'gemini-3-pro-preview' },
+  { label: 'Claude Sonnet 4.5 (Thinking)', value: 'claude-sonnet-4-5-20250929-thinking' },
+  { label: 'Claude Opus 4.1', value: 'claude-opus-4-1-20250805' }
+
+]);
+
+const showVideoPreviewDialog = ref(false);
+const viewingVideoScene = ref(null);
 
 // --- Modification Logic ---
 const openSingleModificationDialog = (index) => {
@@ -433,7 +498,7 @@ const modifySingleScene = async () => {
     const fullPrompt = `你是一个专业的分镜师。请根据修改指令智能修改这个分镜的图片提示词和视频提示词。
       原始分镜：
       图片提示词：${scene.image_prompt}
-      视频提示词：${single_frame_video_prompt}
+      视频提示词：${scene.single_frame_video_prompt}
 
       修改指令：${modificationPrompt.value}
 
@@ -450,9 +515,11 @@ const modifySingleScene = async () => {
       图片提示词：修改后的图片提示词
       视频提示词：修改后的视频提示词
 
-      请立即开始修改：`; 
-    const result = await PromptAPI.apicoreGenerateTxt(fullPrompt, 'gpt-5-2025-08-07');
-    const lines = result.split('\n').filter(line => line.trim());
+      请立即开始修改：`;
+    // gpt-5-2025-08-07
+    const result = await PromptAPI.apicoreGenerateTxt(fullPrompt, modificationModel.value);
+    let cleanedResult = result.replace(/<think>.*?<\/think>/g, '');
+    const lines = cleanedResult.split('\n').filter(line => line.trim());
     const imageLine = lines.find(line => line.startsWith('图片提示词：'));
     const videoLine = lines.find(line => line.startsWith('视频提示词：'));
     if (imageLine) scenes.value[index].image_prompt = imageLine.replace('图片提示词：', '').trim();
@@ -467,57 +534,143 @@ const modifySingleScene = async () => {
   }
 };
 const modifyStoryboard = async () => {
-    if (!modificationPrompt.value.trim()) return ElMessage.warning('请输入修改要求');
-    isModifying.value = true;
-    try {
-        const scenesText = scenes.value.map((s, i) => `分镜${i + 1}\n图片提示词：${s.image_prompt}\n视频提示词：${s.single_frame_video_prompt}`).join('\n\n');
-        const fullPrompt = `你是专业的分镜修改助手...${scenesText}...`;
-        const result = await PromptAPI.apicoreGenerateTxt(fullPrompt, 'gemini-3-pro-preview');
-        parseModificationResponse(result);
-        showModificationDialog.value = false;
-        ElMessage.success('所有分镜修改成功！');
-    } catch (error) {
-        console.error('智能修改所有分镜失败:', error);
-        ElMessage.error('智能修改所有分镜失败');
-    } finally {
-        isModifying.value = false;
-    }
+  if (!modificationPrompt.value.trim()) return ElMessage.warning('请输入修改要求');
+  isModifying.value = true;
+  try {
+    const scenesText = scenes.value.map((s, i) => `分镜${i + 1}\n图片提示词：${s.image_prompt}\n视频提示词：${s.single_frame_video_prompt}`).join('\n\n');
+    const fullPrompt = `
+
+        你是专业的分镜修改助手。我需要你对现有项目的所有分镜进行“服装与颜色”的统一改造。
+
+        ⚠️ **重要说明：**
+        - 仅修改“服装/衣着/服饰/颜色”等相关描述；分镜“内容/人物关系/环境/时间/镜头/动作”等保持不变
+        - 允许重写服装短语（而非逐字替换），但必须保留原有整体结构与标签
+        - 输出必须使用中文
+
+        **修改要求：**
+        ${modificationPrompt.value}
+
+        **严格执行原则：**
+        1. **分镜内容绝对不变**：原有的分镜内容描述必须保持100%不变
+        2. **精确替换**：只在图片提示词和视频提示词中进行指定的词语替换
+        3. **保持原有结构**：必须保持图片提示词的完整结构，包括[主体]、表情、动作、[环境]、[时间]、[天气]、[视角]、[景别]等所有部分
+        4. **一致性替换**：在所有分镜中统一执行相同的替换
+        5. **保留所有其他内容**：除了指定替换的词语外，其他所有描述都必须保持原样
+        6. **🚨 角色名可以按指令修改**：如果修改指令明确要求修改角色（如"Raju改为小女孩"），则可以修改角色名称和描述，但必须同步更新所有相关内容
+        7. **🚨 性别代词必须同步**：如果修改涉及角色性别变化（如男孩→女孩），必须在所有图片提示词和视频提示词中同步更新性别代词（他→她、his→her等），确保性别一致性
+        8. **🚨 保持完整结构**：如果原图片提示词包含表情、动作、环境等描述，修改后也必须保持这些部分完整，不能删除
+
+        **待修改的分镜列表（共${scenes.value.length}个）：**
+
+        ${scenesText}
+
+        **输出格式：**
+        请严格按照以下格式输出，务必完成所有${scenes.value.length}个分镜的修改：
+
+        分镜1：
+        图片提示词：[完整的修改后图片提示词，保持原有完整结构，只替换指定词语]
+        视频提示词：[修改后的视频提示词]
+
+        分镜2：
+        图片提示词：[完整的修改后图片提示词，保持原有完整结构，只替换指定词语]
+        视频提示词：[修改后的视频提示词]
+
+        ...继续直到分镜${scenes.value.length}
+
+        **⚠️ 关键要求（必须遵守）：**
+        1. **必须输出所有${scenes.value.length}个分镜** - 不要中途停止
+        2. **不要输出分镜内容** - 只输出图片提示词和视频提示词
+        3. **精确替换** - 只替换指定的词语,不要重写或删除其他部分
+        4. **保持完整结构** - 图片提示词必须保持原有的完整格式和所有描述部分
+        5. **保持简洁** - 不要添加任何解释、注释或额外内容
+        6. **使用中文** - 所有输出使用中文
+
+        ⚠️ **角色与服装改造同步要求：**
+        1) 角色名可以按修改指令要求修改（原有角色清单：Bob、Officer、Alex、Rainbow、Blue、Yellow、Help）
+        2) 如果修改涉及角色性别变化，必须在所有地方同步更新性别代词（他/她、他的/她的等）
+        3) 同一分镜中不同角色的服装颜色必须彼此不同（如：红/蓝/绿/紫/白/黑/金/银等鲜明颜色）
+        4) 图片提示词和视频提示词必须保持一致，涉及服装、颜色、性别的修改必须同步更新
+
+        ⚠️ **特别注意：如果原图片提示词是这样的格式：**
+        'Scene 1: [主体]角色：Priya（描述）表情：悲伤。动作：描述动作。[环境]描述环境...'
+
+        **修改后必须保持完整格式：**
+        'Scene 1: [主体]角色：Priya（修改后的服装与颜色描述）表情：悲伤。动作：描述动作。[环境]描述环境...'
+
+        绝对不能只输出：'[主体]角色：Priya（修改后描述）' 这样会丢失重要信息！
+        输出规则：必须完整输出所有24个分镜的修改结果。格式：
+        分镜N：
+        图片提示词：[完整的修改后图片提示词，保持原有完整结构，只替换指定词语]
+        视频提示词：[修改后的视频提示词]
+
+        ⚠️ 重要：必须保持图片提示词的完整结构，包括Scene N、[主体]、表情、动作、[环境]等所有部分，绝对不能删除！
+        不要添加解释、注释或停止输出。直接从分镜1输出到分镜24。
+
+        立即开始修改，从分镜1到分镜${scenes.value.length}
+        `;
+    const result = await PromptAPI.apicoreGenerateTxt(fullPrompt, modificationModel.value);
+    let cleanedResult = result.replace(/<think>.*?<\/think>/g, '');
+    parseModificationResponse(cleanedResult);
+    showModificationDialog.value = false;
+    ElMessage.success('所有分镜修改成功！');
+  } catch (error) {
+    console.error('智能修改所有分镜失败:', error);
+    ElMessage.error('智能修改所有分镜失败');
+  } finally {
+    isModifying.value = false;
+  }
 };
 const parseModificationResponse = (response) => {
-  const sceneBlocks = response.split(/分镜\d+：/).filter(s => s.trim());
-  sceneBlocks.forEach((block, index) => {
+  const sceneRegex = /分镜(\d+)：([\s\S]*?)(?=分镜\d+：|$)/g;
+  let match;
+  while ((match = sceneRegex.exec(response)) !== null) {
+    const sceneNumber = parseInt(match[1], 10);
+    const block = match[2];
+    const index = sceneNumber - 1;
+
     if (scenes.value[index]) {
-      const imagePromptMatch = block.match(/图片提示词：([\s\S]*?)视频提示词：/);
+      const imagePromptMatch = block.match(/图片提示词：([\s\S]*?)(?:视频提示词：|$)/);
       const videoPromptMatch = block.match(/视频提示词：([\s\S]*)/);
-      if (imagePromptMatch) scenes.value[index].image_prompt = imagePromptMatch[1].trim();
-      if (videoPromptMatch) scenes.value[index].single_frame_video_prompt = videoPromptMatch[1].trim();
+      
+      if (imagePromptMatch && imagePromptMatch[1].trim()) {
+        scenes.value[index].image_prompt = imagePromptMatch[1].trim();
+      }
+      // Check if videoPromptMatch and its capturing group are not null/empty
+      if (videoPromptMatch && videoPromptMatch[1] && videoPromptMatch[1].trim()) {
+        scenes.value[index].single_frame_video_prompt = videoPromptMatch[1].trim();
+      }
     }
-  });
+  }
 };
 
 // --- Scene, Image, and Video Operations ---
 const add = () => scenes.value.push(createNewScene());
 const remove = (idx) => { scenes.value.splice(idx, 1); updateSelection(); }
 const clearAll = () => { scenes.value = [createNewScene()]; peoples.value = []; updateSelection(); ElMessage.success('已清空所有分镜'); }
+
 const storyTheme = ref('')
 
 const loadStory = (key, closeDialog = true) => {
   const data = JSON.parse(localStorage.getItem(key) || '{}');
   if (data.scenes && Array.isArray(data.scenes)) {
-    peoples.value = (data.characters || []).map(c => ({ name: c.name || '', description: c.description || '' }));
     scenes.value = data.scenes.map(s => createNewScene(s));
-    storyTheme.value = localStorage.getItem('script_topic') || data.topic || 'storyboard';
+    updatePeoplesFromScenes(scenes.value);
+    storyTheme.value = localStorage.getItem('script_topic') || data.form.topic || 'storyboard';
     currentStoryKey.value = key;
     if (closeDialog) showHistoryDialog.value = false;
     updateSelection();
-    ElMessage.success(`已加载分镜: ${data.topic}`);
+    ElMessage.success(`已加载分镜: ${data.topic || '无主题'}`);
   } else {
     ElMessage.warning('此历史记录中没有可用的分镜数据。');
   }
 };
-const previewImage = (scene, index) => {
-  viewingScene.value = { ...scene, index };
-  previewImageUrl.value = scene.image_url;
+const previewVideo = (scene) => {
+  viewingVideoScene.value = scene;
+  showVideoPreviewDialog.value = true;
+};
+const previewImage = (item, index) => {
+  viewingScene.value = { ...item, index };
+  previewImageUrl.value = item.url;
   showImagePreview.value = true;
 };
 const removeImage = (sceneIndex) => {
@@ -581,8 +734,8 @@ const generateVideoForScene = async (sceneIndex) => {
     }
     scene.videoProvider = videoProvider.value;
     const providerName = scene.videoProvider.replace('-sora', '');
-    const options = { prompt, seconds: parseInt(videoSeconds.value, 10), size: videoSize.value, watermark: videoWatermark.value, is_private: videoIsPrivate.value, n_frames: parseInt(videoSeconds.value, 10), remove_watermark: !videoWatermark.value };
-    
+    const options = { model: 'sora', prompt, seconds: parseInt(videoSeconds.value, 10), size: videoSize.value, watermark: videoWatermark.value, is_private: videoIsPrivate.value, n_frames: parseInt(videoSeconds.value, 10), remove_watermark: !videoWatermark.value };
+
     if (providerName === 'yunwu') {
       options.aspect_ratio = videoSize.value;
     } else if (providerName === 'kie') {
@@ -636,7 +789,7 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
     if (providerName === 'yunwu') {
       scene.videoStatus = statusResponse.status;
       scene.videoProgress = statusResponse.progress || 0;
-      if (statusResponse.status === 'completed') { scene.videoUrl = statusResponse.video_url; isDone = true; } 
+      if (statusResponse.status === 'completed') { scene.videoUrl = statusResponse.videoUrl; isDone = true; }
       else if (statusResponse.status === 'failed' || statusResponse.status === 'error') { scene.videoErrorMessage = statusResponse.error?.message || '未知错误'; isDone = true; }
     } else if (providerName === 'kie') {
       if (statusResponse.code === 200) {
@@ -675,6 +828,7 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
 
 const getStoryIndex = () => JSON.parse(localStorage.getItem('story_index') || '[]');
 
+
 const loadHistory = () => {
   const index = getStoryIndex();
   savedStories.value = index.map(key => {
@@ -682,6 +836,23 @@ const loadHistory = () => {
     return { key, topic: data.topic, createdAt: data.createdAt };
   }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 };
+const exportToCSV = () => {
+  const header = ['image_prompt', 'single_frame_video_prompt', 'dual_frame_video_prompt', 'subtitle_text'];
+  const data = scenes.value.map(scene => [
+    scene.image_prompt,
+    scene.single_frame_video_prompt,
+    scene.dual_frame_video_prompt,
+    scene.subtitle_text
+  ]);
+  const worksheet = XLSX.utils.aoa_to_sheet([header, ...data]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Storyboard');
+  XLSX.writeFile(workbook, `${storyTheme.value}.csv`);
+};
+
+watch(scenes, (newScenes) => {
+  updatePeoplesFromScenes(newScenes);
+}, { deep: true });
 
 onMounted(() => {
   storyTheme.value = localStorage.getItem('script_topic') || localStorage.getItem('story_theme') || 'storyboard';
@@ -697,7 +868,7 @@ onMounted(() => {
         const savedState = JSON.parse(savedStateJSON);
         if (savedState.currentStoryKey === incomingStoryKey) {
           scenes.value = savedState.scenes;
-          if (savedState.peoples && Array.isArray(savedState.peoples)) peoples.value = savedState.peoples;
+          updatePeoplesFromScenes(scenes.value);
           currentStoryKey.value = savedState.currentStoryKey;
           ElMessage.success('已恢复您对该故事的编辑');
           stateLoaded = true;
@@ -707,7 +878,6 @@ onMounted(() => {
     if (!stateLoaded && incomingStoryKey) {
       ElMessage.info('加载新故事分镜...');
       loadStory(incomingStoryKey, false);
-      currentStoryKey.value = incomingStoryKey;
     }
   } else {
     const savedStateJSON = localStorage.getItem('storyboard_state');
@@ -716,7 +886,7 @@ onMounted(() => {
         const savedState = JSON.parse(savedStateJSON);
         if (savedState.scenes && Array.isArray(savedState.scenes)) {
           scenes.value = savedState.scenes;
-          if (savedState.peoples && Array.isArray(savedState.peoples)) peoples.value = savedState.peoples;
+          updatePeoplesFromScenes(scenes.value);
           currentStoryKey.value = savedState.currentStoryKey;
           ElMessage.success('已恢复上次的编辑状态');
         }
@@ -740,38 +910,47 @@ watch(showModificationDialog, (newVal) => {
   margin-bottom: 16px;
   flex-wrap: wrap;
 }
+
 .scene-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));
   gap: 16px;
 }
+
 .scene-card .card-header {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+
 .scene-card .card-header span {
   font-weight: bold;
 }
+
 .scene-card .card-actions {
   margin-left: auto;
 }
+
 .scene-content {
   display: flex;
   gap: 16px;
 }
+
 .prompt-fields {
   flex: 2;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
+
 .media-previews {
   flex: 1;
   display: flex;
   gap: 8px;
 }
-.image-preview-wrapper, .video-preview-wrapper {
+
+.image-preview-wrapper,
+.video-preview-wrapper {
   width: 100%;
   border: 1px dashed #dcdfe6;
   border-radius: 4px;
@@ -781,6 +960,7 @@ watch(showModificationDialog, (newVal) => {
   align-items: center;
   gap: 4px;
 }
+
 .preview-image {
   width: 100%;
   height: auto;
@@ -789,9 +969,11 @@ watch(showModificationDialog, (newVal) => {
   border-radius: 4px;
   cursor: pointer;
 }
+
 .preview-video {
   width: 100%;
 }
+
 .preview-placeholder {
   display: flex;
   align-items: center;
@@ -801,17 +983,54 @@ watch(showModificationDialog, (newVal) => {
   color: #909399;
   font-size: 14px;
 }
+
 .image-actions {
   display: flex;
   justify-content: space-around;
   width: 100%;
 }
+
 .video-status-overlay {
-    font-size: 12px;
-    padding: 8px;
-    text-align: center;
+  font-size: 12px;
+  padding: 8px;
+  text-align: center;
 }
+
 .view-video-link {
-    font-size: 12px;
+  font-size: 12px;
+}
+
+.character-card-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.character-desc {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 8px;
+  height: 40px;
+  overflow: auto;
+}
+.character-image {
+  width: 100%;
+  height: 150px;
+  border-radius: 4px;
+  background-color: #f5f7fa;
+}
+.character-uploader {
+  width: 100%;
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #dcdfe6;
+  border-radius: 4px;
+}
+.character-actions {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
 }
 </style>

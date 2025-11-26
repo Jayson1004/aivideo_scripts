@@ -140,9 +140,24 @@ export const BookwormAPI = {
   analyze: async (payload) => {
     const token = settings.value.bookwormApiKey;
     if (!token) throw new Error('API token is required');
-
-    const { data } = await api.post('/api/bookworm/analyze', { ...payload, token });
-    return data;
+    const url = "https://api.apimart.ai/v1/chat/completions";
+    
+    
+    const headers = {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json"
+    };
+    
+    fetch(url, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(payload)
+    })
+      .then(response => response.json())
+      .then(data => console.log(data))
+      .catch(error => console.error('Error:', error));
+    // const { data } = await api.post('/api/bookworm/analyze', { ...payload, token });
+    // return data;
   },
 };
 

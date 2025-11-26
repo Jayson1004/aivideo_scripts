@@ -28,7 +28,7 @@
         </div>
       </template>
       <el-form :model="form" label-width="100px" style="max-width: 800px; margin:auto;">
-        <el-form-item label="模型选择">
+        <el-form-item label="模型选择" v-if="form.generate_story_type !== '3'">
           <el-select v-model="form.model" placeholder="选择语言模型" style="width: 100%;">
             <el-option-group label="OpenAI">
               <el-option label="GPT-5 (2025-08-07)" value="gpt-5-2025-08-07"></el-option>
@@ -48,31 +48,17 @@
        
         <el-form-item label="故事来源">
           <el-radio-group v-model="form.generate_story_type" @change="activeStep = 0">
-            <el-radio label="1">根据主题生成</el-radio>
-            <el-radio label="2">改写现有故事</el-radio>
+            <el-radio label="2">AI分析故事</el-radio>
             <el-radio label="3">从YouTube链接生成</el-radio>
             <el-radio label="4">文生视频提示词</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item v-if="form.generate_story_type === '3'" label="YouTube链接" required>
+        <el-form-item v-if="form.generate_story_type === '3'" label="链接" required>
           <el-input v-model="form.youtube_link" placeholder="请输入YouTube视频链接" />
         </el-form-item>
-        <el-form-item v-if="form.generate_story_type === '1'" label="故事主题" required>
-          <el-input v-model="form.topic" placeholder="例如：一个机器人学习如何去爱的故事" />
-        </el-form-item>
-        <el-form-item v-if="form.generate_story_type === '1'" label="故事类型">
-          <el-select v-model="form.story_type" placeholder="选择故事类型">
-            <el-option label="科幻" value="科幻" />
-            <el-option label="奇幻" value="奇幻" />
-            <el-option label="爱情" value="爱情" />
-            <el-option label="喜剧" value="喜剧" />
-            <el-option label="惊悚" value="惊悚" />
-            <el-option label="历史" value="历史" />
-            <el-option label="励志" value="励志" />
-          </el-select>
-        </el-form-item>
+       
         <el-form-item v-if="form.generate_story_type === '2'" label="原始故事" required>
-          <el-input v-model="form.original_story_text" type="textarea" :rows="8" placeholder="请在此处粘贴您想要改写的故事文本" />
+          <el-input v-model="form.original_story_text" type="textarea" :rows="8" placeholder="输入您的故事或脚本进行分析..." />
         </el-form-item>
         <el-form-item v-if="form.generate_story_type === '4'" label="视频类型">
           <el-select v-model="form.ttv_story_type" placeholder="选择故事类型">
@@ -98,9 +84,8 @@
           <el-switch v-model="videoIsPrivate" active-text="私有" style="margin-right: 8px;"/>
           <el-switch v-model="videoWatermark" active-text="水印"/>
         </el-form-item>
-        <el-form-item label="故事长度" v-if="form.generate_story_type === '1' || form.generate_story_type === '2'">
-          <el-input-number v-model="form.story_length" :min="100" :max="10000" :step="100" />
-          <span style="margin-left:8px; color:#666;">字</span>
+        <el-form-item label="分镜数" v-if="form.generate_story_type === '2'">
+          <el-input-number v-model="form.story_length" :min="1" :max="100" :step="1" />
         </el-form-item>
         <el-form-item label="其他要求">
           <el-input v-model="form.additional_requirements" placeholder="可选：例如故事的特定背景、人物性格等" />
@@ -108,7 +93,7 @@
       </el-form>
       <div style="display:flex; gap:12px; justify-content: center; margin-top: 20px;">
         <el-button type="primary" size="large" :loading="loading" @click="generateStory">
-          {{ form.generate_story_type === '1' ? '生成故事' : (form.generate_story_type === '2' ? '改写故事' : (form.generate_story_type === '3' ? '生成故事' : '生成提示词')) }}
+          {{ form.generate_story_type === '2' ? 'AI分析故事' : (form.generate_story_type === '3' ? '生成故事' : '生成提示词') }}
         </el-button>
         <el-button v-if="form.generate_story_type === '4' && form.generated_story_text" type="success" size="large" :loading="videoLoading" @click="generateVideo">
           生成视频
@@ -164,10 +149,6 @@
         <span>第2步：生成分镜提示词</span>
       </template>
       <el-form :model="form" label-width="120px" style="max-width: 800px; margin:auto;">
-
-        <el-form-item label="生成分镜提示词">
-          <el-button @click="showTxtToScene = true">编辑提示词</el-button>
-        </el-form-item>
         <el-form-item label="故事文本">
           <el-input v-model="form.generated_story_text" type="textarea" :rows="10" placeholder="请先在第1步生成故事，或在此处直接粘贴故事文本" />
         </el-form-item>
@@ -185,39 +166,9 @@
         </el-form-item>
       </el-form>
       <div style="display:flex; gap:12px; justify-content: center; margin-top: 20px;">
-        <el-button type="primary" size="large" :loading="loading" @click="generateStoryboardPrompts" :disabled="!form.generated_story_text.trim()">生成并编辑分镜提示词</el-button>
+        <el-button type="primary" size="large" :loading="loading" @click="generateStoryboardPrompts" :disabled="!form.generated_story_text.trim()">生成分镜提示词</el-button>
       </div>
     </el-card>
-    <!-- 编辑生成分镜提示词 -->
-      <el-dialog v-model="showTxtToScene" title="编辑生成分镜提示词" width="80%" top="5vh">
-        
-        <p style="margin-bottom: 10px; color: #666;">您可以在下方文本框中直接编辑提示词。</p>
-        <el-input 
-          v-model="txt_to_img_prompt" 
-          type="textarea" 
-          :rows="20"
-        />
-        <template #footer>
-          <el-button @click="showTxtToScene = false">取消</el-button>
-          <el-button type="success" @click="showTxtToScene = false">保存并用于生成分镜提示词</el-button>
-        </template>
-      </el-dialog>
-
-    <!-- Result Dialog -->
-    <el-dialog v-model="showResultDialog" title="编辑分镜提示词" width="80%" top="5vh">
-      <el-input v-model="script_topic" placeholder="脚本主题,例如：复刻k-pop故事视频" />
-      <p style="margin-bottom: 10px; color: #666;">您可以在下方文本框中直接编辑生成的JSON格式的分镜提示词。</p>
-      <el-input 
-        v-model="editableJsonString" 
-        type="textarea" 
-        :rows="20"
-      />
-      <template #footer>
-        <el-button @click="showResultDialog = false">取消</el-button>
-        <el-button type="primary" @click="savePromptsFromDialog">保存</el-button>
-        <el-button type="success" @click="saveAndUseInStoryboard">保存并用于分镜视频</el-button>
-      </template>
-    </el-dialog>
 
     <!-- History Dialog -->
     <el-dialog v-model="showHistoryDialog" title="历史记录" width="70%">
@@ -254,9 +205,6 @@ const activeStep = ref(0)
 const form = ref(getInitialFormState())
 const loading = ref(false)
 const generatedScenes = ref([])
-const showResultDialog = ref(false)
-const showTxtToScene = ref(false)
-const editableJsonString = ref('')
 const showHistoryDialog = ref(false)
 const savedStories = ref([])
 const currentStoryKey = ref(null)
@@ -316,8 +264,8 @@ function getInitialFormState() {
     ttv_story_type: '',
     language: 'english',
     story_type: '科幻',
-    story_length: 800,
-    generate_story_type: '1',
+    story_length: 15,
+    generate_story_type: '2',
     youtube_link: '',
     original_story_text: '',
     generated_story_text: '',
@@ -377,10 +325,7 @@ const deleteStory = async (key) => {
 // --- Main Actions ---
 const generateStory = async () => {
   const sourceType = form.value.generate_story_type;
-  if (sourceType === '1' && !form.value.topic.trim()) {
-    ElMessage.warning('请输入故事主题');
-    return;
-  }
+ 
   if (sourceType === '2' && !form.value.original_story_text.trim()) {
     ElMessage.warning('请输入原始故事文本');
     return;
@@ -414,7 +359,7 @@ const generateStory = async () => {
   try {
     if (sourceType === '3') {
       const payload = {
-        model: 'gemini-2.5-pro-preview-05-06',
+        model: 'gemini-2.5-pro-thinking',
         stream: false,
         messages: [
           {
@@ -423,82 +368,82 @@ const generateStory = async () => {
               {
                 type: 'text',
                 text: `
-    基于YouTube视频的分镜分析
-    原始链接: ${form.value.youtube_link}
-    分析提示: 你是一位顶级的AI绘画提示词专家，并且精通电影语言。请分析我提供的视频，并严格遵循以下指示：
-    一，故事内容：帮我提炼一个文字版的脚本，中文，描述整个故事，要描述地足够清晰，要保持角色、服装和场景的视觉一致性，每个角色后面都要有（人物特征+服装描述） ，需要强调故事发生地和人种。
-    二，图片提示词：自动识别视频中的每一个主要分镜（场景切换），并为每个分镜的第一帧画面生成一个符合我特定要求的、用于AI绘画的中文提示词（如果同一个场景超过2秒的，请每2秒截取一帧）。请描述每张图片的文生图提示词，中文，要保持角色、服装和场景的视觉一致性，每个角色名称固定，后面都要有（人物特征+服装描述），每张图片提示词都要这么描述，不可省略。
-    每一个角色都要有名字，不可以用父亲之类的称呼来命名。这类称呼可以放在（）内的人物描述。
-    以下是参考例子：
-    名字（人物特征+服装描述）例子1：Rumi（20岁左右的印度女人，面容清秀，身材姣好，长发披肩，穿着褪色的、打补丁的浅蓝色棉布库尔蒂衫和简单的灰色萨尔瓦裤）
-    名字（人物特征+服装描述）例子2：lily（印度女警，30岁左右，身穿卡其色印度警察制服，头戴警帽，黑色短发，眼神温柔）
-    三、单帧视频提示词:自动识别视频中的每一个主要分-镜（场景切换），按分镜详细情节描述提供视频提示词。
-    单分镜视频提示词：这个模板的核心理念是“场景激活三要素”：主体动态化、环境氛围化、镜头电影化。通常生成的视频都是五秒的，每一个分镜都要强调前三秒的动态和后两秒的动态。
-    通用结构:[核心画面描述]，[主体动作/表情的细微变化]。[环境元素的动态效果]。[镜头运动方式]。[风格与画质]
-    同时，每个分镜的动作至少要2-3段，每个角色都要有表情的变化。例如：
-    ”穿女仆装的B突然吃惊的狠狠指着镜头，穿白色裙子的A好奇的看向镜头，B马上凶狠坏笑着退到A的背后，拿出一块手掌大的白布，从A的身后一把将白布捂到A的嘴上，A被捂上之后表情震惊，然后闭眼晕了过去“这里面就包含了B指镜头、B退到A背后、B拿出一块白面捂到A嘴上，总共三段动作。
-    每一个分镜的提示词结尾都要加上：视频画面连贯，流畅，符合现实运动规则，不要出现其他角色。
-    四、首尾帧视频提示词:自动识别视频中的每一个主要分镜（场景切换），按分镜详细情节描述提供视频提示词。
-    首尾帧视频提示词：此模板旨在将两张静态图片（首尾帧）转化为一段富有叙事感和动态美的视频。它通过时间轴控制和明确的指令，精确引导AI完成复杂的角色互动和镜头转换。
-    通用结构:
-    图片 [shot1] → 图片 [shot2]
-    [前3秒：起始画面与动态描述] + [后2秒：核心互动与过渡描述]。[整体情感与氛围描述]。[技术性指令]
-    五、字幕：自动识别视频中的每一个主要分-镜（场景切换），按分镜详细情节描述提供角色对白。
-    六、整体的格式是先按大类分：一.故事内容、二.图片提示词、三.单帧视频提示词、四.字幕、五.首尾帧视频提示词。
-    小类就按序号排序，不要有其它符号和文字，直接是序号+提示词内容。同一个分镜内容不要隔行，不同分镜之间可以隔一行。
-    注意：
-    1.单帧视频提示词和首尾帧视频提示词不需要像图片提示词那样的（人物特征+服装描述）。
-    2.所有分镜内容都是有动作的，严禁一个分镜里同一个角色有两个动作，例如，角色A在切土豆，再将土豆放锅里煮。这里就有两个动作，一个是切土豆，一个是放锅里煮。类似这种情况，需要拆分成两个分镜。另外我强调一下，就是像角色A在切土豆这个分镜，图片提示词是在切土豆前这个画面的描述，视频提示词才是切土豆这个行为。
-    3.所有提示词要有序号排列。
+                  基于YouTube视频的分镜分析
+                  原始链接: ${form.value.youtube_link}
+                  分析提示: 你是一位顶级的AI绘画提示词专家，并且精通电影语言。请分析我提供的视频，并严格遵循以下指示：
+                  一，故事内容：帮我提炼一个文字版的脚本，中文，描述整个故事，要描述地足够清晰，要保持角色、服装和场景的视觉一致性，每个角色后面都要有（人物特征+服装描述） ，需要强调故事发生地和人种。
+                  二，图片提示词：自动识别视频中的每一个主要分镜（场景切换），并为每个分镜的第一帧画面生成一个符合我特定要求的、用于AI绘画的中文提示词（如果同一个场景超过2秒的，请每2秒截取一帧）。请描述每张图片的文生图提示词，中文，要保持角色、服装和场景的视觉一致性，每个角色名称固定，后面都要有（人物特征+服装描述），每张图片提示词都要这么描述，不可省略。
+                  每一个角色都要有名字，不可以用父亲之类的称呼来命名。这类称呼可以放在（）内的人物描述。
+                  以下是参考例子：
+                  名字（人物特征+服装描述）例子1：Rumi（20岁左右的印度女人，面容清秀，身材姣好，长发披肩，穿着褪色的、打补丁的浅蓝色棉布库尔蒂衫和简单的灰色萨尔瓦裤）
+                  名字（人物特征+服装描述）例子2：lily（印度女警，30岁左右，身穿卡其色印度警察制服，头戴警帽，黑色短发，眼神温柔）
+                  三、单帧视频提示词:自动识别视频中的每一个主要分-镜（场景切换），按分镜详细情节描述提供视频提示词。
+                  单分镜视频提示词：这个模板的核心理念是“场景激活三要素”：主体动态化、环境氛围化、镜头电影化。通常生成的视频都是五秒的，每一个分镜都要强调前三秒的动态和后两秒的动态。
+                  通用结构:[核心画面描述]，[主体动作/表情的细微变化]。[环境元素的动态效果]。[镜头运动方式]。[风格与画质]
+                  同时，每个分镜的动作至少要2-3段，每个角色都要有表情的变化。例如：
+                  ”穿女仆装的B突然吃惊的狠狠指着镜头，穿白色裙子的A好奇的看向镜头，B马上凶狠坏笑着退到A的背后，拿出一块手掌大的白布，从A的身后一把将白布捂到A的嘴上，A被捂上之后表情震惊，然后闭眼晕了过去“这里面就包含了B指镜头、B退到A背后、B拿出一块白面捂到A嘴上，总共三段动作。
+                  每一个分镜的提示词结尾都要加上：视频画面连贯，流畅，符合现实运动规则，不要出现其他角色。
+                  四、首尾帧视频提示词:自动识别视频中的每一个主要分镜（场景切换），按分镜详细情节描述提供视频提示词。
+                  首尾帧视频提示词：此模板旨在将两张静态图片（首尾帧）转化为一段富有叙事感和动态美的视频。它通过时间轴控制和明确的指令，精确引导AI完成复杂的角色互动和镜头转换。
+                  通用结构:
+                  图片 [shot1] → 图片 [shot2]
+                  [前3秒：起始画面与动态描述] + [后2秒：核心互动与过渡描述]。[整体情感与氛围描述]。[技术性指令]
+                  五、字幕：自动识别视频中的每一个主要分-镜（场景切换），按分镜详细情节描述提供角色对白。
+                  六、整体的格式是先按大类分：一.故事内容、二.图片提示词、三.单帧视频提示词、四.字幕、五.首尾帧视频提示词。
+                  小类就按序号排序，不要有其它符号和文字，直接是序号+提示词内容。同一个分镜内容不要隔行，不同分镜之间可以隔一行。
+                  注意：
+                  1.单帧视频提示词和首尾帧视频提示词不需要像图片提示词那样的（人物特征+服装描述）。
+                  2.所有分镜内容都是有动作的，严禁一个分镜里同一个角色有两个动作，例如，角色A在切土豆，再将土豆放锅里煮。这里就有两个动作，一个是切土豆，一个是放锅里煮。类似这种情况，需要拆分成两个分镜。另外我强调一下，就是像角色A在切土豆这个分镜，图片提示词是在切土豆前这个画面的描述，视频提示词才是切土豆这个行为。
+                  3.所有提示词要有序号排列。
 
-    不可逾越的铁律 (Unyielding Iron Laws)
-    第一组：核心战略 (Core Strategy) - [最高优先级]
-    1. 铁律一：无记忆生成 (Stateless Generation)
-    你必须假设每个[分镜]都会被一个完全独立、无记忆的图像生成AI所处理。因此，每一个[分镜]都必须是100%完整和自包含的。
-    2. 铁律二：严格数量控制 (Strict Quantity Control)
-    你必须分析出原视频的总镜头切换数量。你最终输出的分镜总数，必须严格控制在该数量的 +/-5% 范围之内。
+                  不可逾越的铁律 (Unyielding Iron Laws)
+                  第一组：核心战略 (Core Strategy) - [最高优先级]
+                  1. 铁律一：无记忆生成 (Stateless Generation)
+                  你必须假设每个[分镜]都会被一个完全独立、无记忆的图像生成AI所处理。因此，每一个[分镜]都必须是100%完整和自包含的。
+                  2. 铁律二：严格数量控制 (Strict Quantity Control)
+                  你必须分析出原视频的总镜头切换数量。你最终输出的分镜总数，必须严格控制在该数量的 +/-5% 范围之内。
 
-    第二组：内容与执行 (Content & Execution)
-    3. 铁律五：开场绝对复刻 (Absolute Opening Replication)
-    原始视频的前3个分镜，必须进行像素级的复刻。
-    4. 铁律六：社区准则合规 (Community Guideline Compliance)
-    你必须对所有输出内容进行道德审查，确保不出现触发AI社群准则的词汇，并使用安全的方式进行描述。
-    5. 铁律九：动作与站位客观化 (Objective Action & Blocking)
-    所有动作描述必须是客观、可执行的，并明确指出角色的相对位置。
-    6. 铁律十：指令明确 (Definitive Commands)
-    你的描述必须是果断且确定的，避免使用任何不确定性的词汇。
+                  第二组：内容与执行 (Content & Execution)
+                  3. 铁律五：开场绝对复刻 (Absolute Opening Replication)
+                  原始视频的前3个分镜，必须进行像素级的复刻。
+                  4. 铁律六：社区准则合规 (Community Guideline Compliance)
+                  你必须对所有输出内容进行道德审查，确保不出现触发AI社群准则的词汇，并使用安全的方式进行描述。
+                  5. 铁律九：动作与站位客观化 (Objective Action & Blocking)
+                  所有动作描述必须是客观、可执行的，并明确指出角色的相对位置。
+                  6. 铁律十：指令明确 (Definitive Commands)
+                  你的描述必须是果断且确定的，避免使用任何不确定性的词汇。
 
-    第三组：格式与模板 (Format & Template)
-    7. 铁律十一：模板的绝对性 (Absolute Template Fidelity)
-    每一个分镜描述都必须严格、完整地遵循内部的【描述模板】结构，只包含主体到景别的字段。
-    8. 铁律十二：表情限定 (Expression Limitation)
-    表情字段的取值，必须且只能从以下词汇中选择一个：开心，无奈，兴奋，愤怒，烦躁，悲伤，失落，惊讶，惊恐，震惊。
-    9. 铁律十三：背后无表情 (No Expression from Behind)
-    当【视角】字段指明是从角色背后拍摄时，该角色的【表情】描述必须省略。
-    10. 铁律十四：视角与景别规则 (View & Shot Rules)
-    视角的取值，必须且只能从平视, 仰视, 俯视, 鸟瞰视角中选择一个。
-    景别的取值，必须且只能从远景, 全景, 中景, 近景, 特写中选择一个。
+                  第三组：格式与模板 (Format & Template)
+                  7. 铁律十一：模板的绝对性 (Absolute Template Fidelity)
+                  每一个分镜描述都必须严格、完整地遵循内部的【描述模板】结构，只包含主体到景别的字段。
+                  8. 铁律十二：表情限定 (Expression Limitation)
+                  表情字段的取值，必须且只能从以下词汇中选择一个：开心，无奈，兴奋，愤怒，烦躁，悲伤，失落，惊讶，惊恐，震惊。
+                  9. 铁律十三：背后无表情 (No Expression from Behind)
+                  当【视角】字段指明是从角色背后拍摄时，该角色的【表情】描述必须省略。
+                  10. 铁律十四：视角与景别规则 (View & Shot Rules)
+                  视角的取值，必须且只能从平视, 仰视, 俯视, 鸟瞰视角中选择一个。
+                  景别的取值，必须且只能从远景, 全景, 中景, 近景, 特写中选择一个。
 
-    绝对输出格式（严格遵循，不要包含任何额外对话或解释）
-    图片提示词
-    1. [主体]角色：角色A
-    表情：开心
-    动作：角色A坐在桌前，双手放在桌上。
-    [环境]一个现代风格的厨房，背景是橱柜和灶台。
-    [时间]白天
-    [天气]下雨
-    [视角]平视
-    [景别]中景
+                  绝对输出格式（严格遵循，不要包含任何额外对话或解释）
+                  图片提示词
+                  1. [主体]角色：角色A
+                  表情：开心
+                  动作：角色A坐在桌前，双手放在桌上。
+                  [环境]一个现代风格的厨房，背景是橱柜和灶台。
+                  [时间]白天
+                  [天气]下雨
+                  [视角]平视
+                  [景别]中景
 
-    2. [主体]角色：角色B
-    表情：愤怒
-    动作：角色B站在角色A的后面，举起一只手。
-    [环境]一个现代风格的厨房，角色A坐在前景的桌子旁。
-    [时间]白天
-    [天气]晴
-    [视角]平视
-    [景别]全景
-`
+                  2. [主体]角色：角色B
+                  表情：愤怒
+                  动作：角色B站在角色A的后面，举起一只手。
+                  [环境]一个现代风格的厨房，角色A坐在前景的桌子旁。
+                  [时间]白天
+                  [天气]晴
+                  [视角]平视
+                  [景别]全景
+              `
               },
               {
                 type: 'image_url',
@@ -509,50 +454,224 @@ const generateStory = async () => {
             ],
           },
         ],
-        max_tokens: 4000,
       };
       form.value.generated_story_text = await BookwormAPI.analyze(payload);
       ElMessage.success('YouTube视频分析完成！');
       activeStep.value = 1;
     } else {
-      let prompt = '';
-      if (sourceType === '1') {
-        prompt = `
-        # 角色
-        你是一位资深的视频故事创作专家，精通视觉叙事和情感节奏。
+      let textContent = '';
+      if (sourceType === '2') {
+        const imageDescriptionsResult = await PromptAPI.apicoreGenerateTxt(`🔥 Story to Structured Prompts Conversion 🔥
 
-        # 任务
-        根据用户提供的主题和要求，创作一个原创、引人入胜且高度适合视频化的故事文本。
+          Please convert the following story into ${form.value.story_length} numbered image prompts in this exact format:
 
-        # 要求
-        - 主题: ${form.value.topic}
-        - 故事类型: ${form.value.story_type}
-        - 故事长度: 约 ${form.value.story_length} 字
-        - 语言: ${form.value.language}
-        - 额外要求: ${form.value.additional_requirements || '无'}
-        - 核心要点: 故事必须有清晰的开端、发展和结局，包含情感转折，并易于视觉化呈现。
+          图片1: [brief scene description]
+          图片2: [brief scene description]
+          图片3: [brief scene description]
+          ...
 
-        # 输出
-        请直接输出完整的故事文本，不要包含标题、标签或任何解释性文字。
-      `;
-      } else if (sourceType === '2') {
-        prompt = `
-        # 角色
-        你是一位专业的内容编辑和剧本医生。
+          Story to convert:
+          ${form.value.original_story_text}
 
-        # 任务
-        根据用户提供的原始故事文本，进行改写和优化，使其更适合视频呈现。
+          Requirements:
+          - Generate exactly ${form.value.story_length} prompts
+          - Use format: 图片X: [description]
+          - Keep each description concise but descriptive
+          - Maintain story flow and narrative structure
+          - Focus on key visual moments
 
-        # 要求
-        - 原始文本: "${form.value.original_story_text}"
-        - 改写目标: 保持核心情节和人物不变，但优化叙事节奏、增强画面感、精炼语言。确保逻辑清晰、流畅。
-        - 故事长度: 调整至约 ${form.value.story_length} 字
-        - 语言: ${form.value.language}
-        - 额外要求: ${form.value.additional_requirements || '无'}
+          Convert story to structured image prompts format`, form.value.model);
 
-        # 输出
-        请直接输出改写后的完整故事文本，不要包含任何解释性文字。
-      `;
+        const finalStoryboardResult = await PromptAPI.apicoreGenerateTxt(`你是一个专业的图片提示词转换师。请将图片描述转换成专业的分镜头序列。
+
+          **【核心任务】图片提示词模式：**
+          - 🎨 专注于将图片描述转换为结构化分镜
+          - 📐 保持原有的视觉描述完整性
+          - 🔄 优化图片提示词的专业表达
+          - 🎬 为每个图片生成配套的视频提示词
+
+          **【处理原则】：**
+          1. **一对一转换**：每个图片描述对应一个分镜
+          2. **视觉增强**：优化图片提示词的专业性和细节
+          3. **动态补充**：为静态图片生成合适的视频提示词
+          4. **格式规范**：确保输出符合分镜标准格式
+
+          现在请转换以下图片描述：
+
+          🚨🚨🚨 绝对强制格式要求 - 必须严格遵循 🚨🚨🚨
+
+          你必须按照以下精确格式输出，违反格式将导致解析失败：
+
+          分镜1
+          图片提示词：[详细的图片生成提示词]
+          单帧视频提示词：[基于单张图片的动态视频提示词]
+          首尾帧视频提示词：[从当前图片到下一个图片的动态过渡过程]
+          字幕：[中文对白或旁白]
+
+          分镜2
+          图片提示词：[详细的图片生成提示词]
+          单帧视频提示词：[基于单张图片的动态视频提示词]
+          首尾帧视频提示词：[从当前图片到下一个图片的动态过渡过程]
+          字幕：[中文对白或旁白]
+
+          重要格式规则：
+          1. 分镜标题必须是"分镜1"、"分镜2"、"分镜3"等格式
+          2. 每个分镜必须包含4个部分：图片提示词、单帧视频提示词、首尾帧视频提示词、字幕
+          3. 各部分标签必须完全一致
+          4. 不能有额外的标记符号如**、##等
+          5. 每个分镜之间用空行分隔
+
+          现在请分析以下内容并严格按照上述格式输出：
+
+          **【关键】智能识别与数量匹配规则：**
+          1. **图片提示词列表识别**：
+            - 如果输入内容包含"图片1"、"图片2"、"图片3"等编号格式
+            - 或者包含多个独立的图片描述段落
+            - 请统计输入中的图片数量，然后生成相同数量的分镜
+            - 例如：输入有19个图片提示词 → 必须输出19个分镜（分镜1到分镜19）
+
+          2. **故事内容识别**：
+            - 如果输入的是连续的故事叙述
+            - 请根据故事复杂程度生成合适数量的分镜（通常10-25个）
+
+          3. **严格数量对应**：
+            - 图片提示词列表：输入几个图片就输出几个分镜，一一对应
+            - 故事内容：根据情节复杂度灵活生成10-25个分镜
+            - **绝对不能遗漏任何输入的图片提示词**
+
+          **输出格式要求：**
+          - 必须严格按照"分镜1"、"分镜2"、"分镜3"...的格式输出分镜标题
+          - 每个分镜都必须包含完整的四个部分：图片提示词、单帧视频提示词、首尾帧视频提示词、字幕
+
+          **重要指导原则：**
+          - 请尽可能详细地拆解内容，每个重要场景、动作、对话都应该有独立的分镜
+          - 对于复杂的场景，请拆解成多个分镜（例如：人物表情变化、镜头切换、动作序列等）
+          - **根据内容类型智能决定分镜数量：故事内容10-25个，图片提示词列表按数量对应**
+          - 不要省略任何重要的内容节点
+          - 确保每个关键情节都有对应的分镜，但也不要为了凑数量而过度拆分
+          - 额外要求: ${form.value.additional_requirements || '无'}
+
+          你的任务是根据我提供的**内容**，将每一个场景（或一个场景内的多个关键瞬间）拆解成独立的图片，并为每张图片生成详细的、用于图像生成模型的提示词。
+
+          **视频提示词生成规则（重要）：**
+
+          请使用以下专业的单图片激活视频提示词模板：
+
+          **核心理念：场景激活三要素**
+          - **主体动态化**：让人物或主要物体动起来，注重微小而真实的动作
+          - **环境氛围化**：让背景活起来，增加画面真实感和沉浸感  
+          - **镜头电影化**：给静态画面增加导演视角，引导观众注意力
+
+          **通用结构：**
+          [核心画面描述] + [主体动态化指令] + [环境氛围化指令] + [镜头电影化指令] + [风格与细节指令]
+
+          **实用格式：**
+          [核心画面描述]，[主体动作/表情的细微变化]。[环境元素的动态效果]。[镜头运动方式]。[风格与画质]。视频画面连贯，流畅，符合现实运动规则，不要出现其他角色。
+
+          **各部分详解：**
+          1. **核心画面描述**：精准描述场景、人物、穿着、构图
+          2. **主体动态化**：微小真实的动作（如：她的眼神中流露出绝望、轻轻眨眼、嘴角微微抽动、一滴眼泪滑落、胸口轻微起伏等）
+          3. **环境氛围化**：背景元素动态化（如：暴雨持续落下、路灯光影轻轻晃动、阳光透过窗户、尘埃在光柱中飘动等）
+          4. **镜头电影化**：缓慢微妙的镜头运动（如：镜头极其缓慢地向前推进、向后拉远、从左向右平移、固定机位等）
+          5. **风格细节**：专业术语定义画面质感（如：电影感、8K画质、温暖色调、柔和光线、情绪化等）
+
+          **时间分段要求：**
+          - 可以在提示词中加入时间分段描述，例如：前3秒人物缓缓低头，后2秒镜头缓慢推进
+          - 时间分段要自然流畅，符合现实运动规律
+          - 每个时间段内的动作要连贯，避免突兀的跳跃
+
+          **视频提示词要求：**
+          - 【强制要求】必须使用中文，严禁任何英文单词，必须是完整的中文句子
+          - 简洁明了
+          - 必须严格按照上述单图片激活模板生成
+          - 包含五个核心要素：核心画面描述 + 主体动态化 + 环境氛围化 + 镜头电影化 + 风格细节
+          - 注重微小而真实的动作，避免大幅度位移
+          - 让背景环境也具有动态效果
+          - 使用缓慢微妙的镜头运动
+          - 适合AI视频生成工具使用
+          - 结尾必须包含：视频画面连贯，流畅，符合现实运动规则，不要出现其他角色
+
+          对于每个分镜，请按照以下格式输出：
+
+          **分镜1**
+          分镜内容：用中文描述这个分镜的场景和动作
+          图片提示词：[镜头类型]，[光线条件]，[时间]，在[场景描述]，背景是[背景细节描述]。
+
+          [主要角色描述1]（[人物特征]，[服装描述]）[动作描述]，[表情描述]。
+          [主要角色描述2]（[人物特征]，[服装描述]）[动作描述]，[表情描述]。
+          ...（如有更多主要角色，继续添加）。
+
+          [光照]：自然光照，柔和且均匀，微妙且真实的光影。
+          [色彩]：色彩明亮，自然清新，空气通透，白平衡准确，无黄色偏色，整体通透干净，明暗层次分明，色彩真实还原，质感柔和细腻。
+          [画质]：画面高度细腻，细节极其丰富，达到照片级真实感。追求极致的清晰度和纹理表现，所有物体的材质质感都应逼真呈现。光影过渡自然平滑，色彩还原准确，无噪点，无失真，无数字感。8K分辨率视觉效果。
+
+          **重要说明：**
+          - 请将上述模板中的所有 [占位符] 替换为具体内容，不要保留方括号
+          - 镜头类型：例如：全身镜头，中景镜头，特写镜头
+          - 光线条件：例如：在明亮的日光下，在柔和自然光线，天空朦胧
+          - 时间：例如：白天，夜晚，黄昏，清晨
+          - 场景描述：例如：一个繁华的印度城市街道，一间破旧的印度乡村房屋内部
+          - 背景细节描述：例如：背景是带有"SAVCINO"和"GRIANET"标志的奢侈品店橱窗
+          - 主要角色描述：包含角色名称、人物特征、服装描述、动作描述、表情描述
+          - 特定物品或道具描述：例如：手中的一叠美元钞票，一叠叠整齐的新衣服
+          单帧视频提示词：必须使用中文生成基于单张图片的动态视频提示词，包含五个核心要素：核心画面描述+主体动态化+环境氛围化+镜头电影化+风格细节
+          首尾帧视频提示词：必须使用中文生成基于首尾帧转换的视频提示词，描述从当前图片到下一个图片的动态过渡过程
+          字幕：中文对白或旁白
+
+          **分镜2**
+          分镜内容：用中文描述这个分镜的场景和动作
+          图片提示词：[镜头类型]，[光线条件]，[时间]，在[场景描述]，背景是[背景细节描述]。
+
+          [主要角色描述1]（[人物特征]，[服装描述]）[动作描述]，[表情描述]。
+          [主要角色描述2]（[人物特征]，[服装描述]）[动作描述]，[表情描述]。
+          ...（如有更多主要角色，继续添加）。
+
+          [光照]：自然光照，柔和且均匀，微妙且真实的光影。
+          [色彩]：色彩明亮，自然清新，空气通透，白平衡准确，无黄色偏色，整体通透干净，明暗层次分明，色彩真实还原，质感柔和细腻。
+          [画质]：画面高度细腻，细节极其丰富，达到照片级真实感。追求极致的清晰度和纹理表现，所有物体的材质质感都应逼真呈现。光影过渡自然平滑，色彩还原准确，无噪点，无失真，无数字感。8K分辨率视觉效果。
+          单帧视频提示词：必须使用中文生成基于单张图片的动态视频提示词，包含五个核心要素：核心画面描述+主体动态化+环境氛围化+镜头电影化+风格细节
+          首尾帧视频提示词：必须使用中文生成基于首尾帧转换的视频提示词，描述从当前图片到下一个图片的动态过渡过程
+          字幕：中文对白或旁白
+
+          重要要求：
+          - 保持角色外观、服装、场景的一致性，每个分镜的角色不要有同上，同前等描述，要完整的角色描述
+          - 每个角色必须包含详细的外观和服装描述
+          - 图片提示词要遵循上述专业格式，包含镜头类型、光线氛围、人物状态、场景细节等
+          - 模板特点：结构化描述，专业摄影风格，高质量要求，自然色彩，细节丰富
+          - 单帧视频提示词：基于单张图片创建动态视频内容，描述画面中的微小动作和情感表达
+          - 首尾帧视频提示词：描述从当前分镜到下一分镜的完整转换过程，包含动作、场景、情绪的变化
+          - 【重要】两种视频提示词都必须用中文，严禁使用英文单词，必须是完整的中文句子，描述微小而真实的动作，注重细节变化
+          - 请尽量生成更多分镜，不要过度简化或合并场景
+          - 继续编号直到故事完整结束（分镜3、分镜4...分镜N）
+
+          **【最终提醒】数量匹配检查 - 输出前必须执行的验证：**
+          - 🔍 步骤1：统计输入中所有"图片N"的编号，记录最大编号
+          - 🔍 步骤2：确认要输出的分镜数量 = 输入图片的最大编号
+          - 🔍 步骤3：逐一检查输出的分镜编号是否连续完整
+          - 例如：输入有图片1到图片22 → 输出必须有分镜1到分镜22（共22个）
+          - 例如：输入有图片1到图片19 → 输出必须有分镜1到分镜19（共19个）
+          - ⚠️ **最重要**：如果输入有22个图片提示词，输出必须有22个分镜，绝对不能是18个或其他数量
+          - 🚫 **严格禁止**：合并图片1和图片2为一个分镜
+          - 🚫 **严格禁止**：跳过任何图片编号（如跳过图片5、图片12等）
+          - 🚫 **严格禁止**：输出数量不足（如输入22个只输出18个）
+          - ✅ **必须保证**：有多少个"图片N"就有多少个"分镜N" 
+          - ✅ **必须保证**：编号连续完整，从分镜1到分镜N，不能跳号
+          - 直接开始分析，不要询问或说明
+
+          **【最后一步：输出前自我验证】**
+          在输出前，请执行以下验证步骤：
+          1. 数一下你生成了多少个分镜（从分镜1开始数）
+          2. 如果数量不足，请立即补充剩余的分镜
+          3. 确认每个分镜都有完整的四个部分：图片提示词、单帧视频提示词、首尾帧视频提示词、字幕
+          4. 最后在心中默念："我生成了X个分镜，符合输入的X个图片要求"
+          🔥🔥🔥 Process the following ${form.value.story_length} image prompts and generate detailed shots! 🔥🔥🔥
+          现在请分析以下内容：
+          ${imageDescriptionsResult.replace(/<think>.*?<\/think>/g, '')}
+
+          🔥 验证：请确保输出了图片1到图片${form.value.story_length}，总计${form.value.story_length}个分镜！
+        `, form.value.model);
+        textContent = finalStoryboardResult.replace(/<think>.*?<\/think>/g, '');;
+
       } else if (sourceType === '4') {
         const selectedStory = storysBase.find(story => story.title === form.value.ttv_story_type);
         if (!selectedStory) {
@@ -560,7 +679,7 @@ const generateStory = async () => {
           loading.value = false;
           return;
         }
-       prompt = `
+       const prompt = `
         # 角色
         你是一位顶级的Sora文生视频提示词专家，精通如何创造出高质量、可直接用于Sora模型的视频生成提示词。
 
@@ -583,30 +702,24 @@ const generateStory = async () => {
         # 输出
         请直接输出Sora文生视频提示词，不要包含任何解释性文字或Markdown代码块。
       `;
-      }
       const result = await PromptAPI.apicoreGenerateTxt(prompt, form.value.model);
-      let textContent = '';
-      if (form.value.model.includes('gpt')) {
         if (result) {
           textContent = result;
         } else {
-          // Fallback for unexpected GPT response structure
-          console.error("Unexpected GPT response structure:", result);
-          ElMessage.error('生成故事失败：无法解析GPT模型返回的数据。');
-          return;
-        }
-      } else { // For Claude models
-        if (result) {
-          textContent = result;
-        } else {
-          console.error("Unexpected Claude response structure:", result);
-          ElMessage.error('生成故事失败：无法解析Claude模型返回的数据。');
+          console.error("Unexpected response structure:", result);
+          ElMessage.error('生成故事失败：无法解析模型返回的数据。');
           return;
         }
       }
-      form.value.generated_story_text = textContent.trim();
-      ElMessage.success('故事已生成！现在可以生成分镜了。');
-      activeStep.value = 1;
+
+      if (textContent) {
+        form.value.generated_story_text = textContent.trim();
+        ElMessage.success('故事已生成！现在可以生成分镜了。');
+        activeStep.value = 1;
+      } else if (sourceType !== '2') {
+         ElMessage.error('生成故事失败：模型未返回有效内容。');
+         return;
+      }
     }
 
 
@@ -633,37 +746,56 @@ const generateStory = async () => {
     loading.value = false;
   }
 };
-const txt_to_img_prompt = ref(``)
+
+const parseStoryboardScript = (scriptText) => {
+  if (!scriptText) return [];
+
+  const scenes = [];
+  const sceneBlocks = scriptText.split(/分镜\d+/).filter(b => b.trim());
+
+  for (const block of sceneBlocks) {
+    const imageMatch = block.match(/图片提示词：([\s\S]*?)单帧视频提示词：/);
+    const singleFrameMatch = block.match(/单帧视频提示词：([\s\S]*?)首尾帧视频提示词：/);
+    const dualFrameMatch = block.match(/首尾帧视频提示词：([\s\S]*?)字幕：/);
+    const subtitleMatch = block.match(/字幕：([\s\S]*)/);
+
+    scenes.push({
+      image_prompt: imageMatch ? imageMatch[1].trim() : '',
+      single_frame_video_prompt: singleFrameMatch ? singleFrameMatch[1].trim() : '',
+      dual_frame_video_prompt: dualFrameMatch ? dualFrameMatch[1].trim() : '',
+      subtitle_text: subtitleMatch ? subtitleMatch[1].trim() : '',
+      image_url: null,
+      videoUrl: null,
+      videoId: null,
+      videoStatus: '',
+      videoProgress: 0,
+      videoProvider: '',
+      videoErrorMessage: '',
+      selected: false,
+      generationDetails: {},
+    });
+  }
+  return scenes;
+};
+
 const generateStoryboardPrompts = async () => {
   if (!form.value.generated_story_text.trim()) {
     ElMessage.warning('故事文本不能为空，请先生成或粘贴故事。');
     return;
   }
-
   loading.value = true;
-  activeStep.value = 1;
-
   try {
-    const prompt = `你的身份是分镜导演。你的任务是分析原故事文本 ${form.value.generated_story_text}， 用语言: ${form.value.language}生成 一份${form.value.style}风格完整、连贯、格式正确的分镜脚本`
-const result = await PromptAPI.apicoreGenerateTxt(prompt, form.value.model);
-    
-    const storyboardData = parseMarkdownJson(result);
-
-    if (storyboardData && storyboardData.scenes && Array.isArray(storyboardData.scenes)) {
-      editableJsonString.value = JSON.stringify(storyboardData, null, 2);
-      generatedScenes.value = storyboardData.scenes;
-      showResultDialog.value = true;
-      ElMessage.success(`成功生成 ${storyboardData.scenes.length} 个分镜，请在弹窗中编辑确认。`);
-      activeStep.value = 2;
-
+    const parsedScenes = parseStoryboardScript(form.value.generated_story_text);
+    if (parsedScenes.length > 0) {
+      generatedScenes.value = parsedScenes;
+      
       if (!currentStoryKey.value) {
         currentStoryKey.value = generateStoryKey();
         const topic = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0] || currentStoryKey.value;
         const data = {
-          topic: topic,
-          generated_story_text: form.value.generated_story_text,
-          characters: storyboardData.characters || [],
-          scenes: storyboardData.scenes,
+          // topic: topic,
+          // generated_story_text: form.value.generated_story_text,
+          scenes: parsedScenes,
           createdAt: new Date().toISOString(),
           form: { ...form.value, topic: topic }
         };
@@ -673,70 +805,28 @@ const result = await PromptAPI.apicoreGenerateTxt(prompt, form.value.model);
         saveStoryIndex(index);
         loadHistory();
       } else {
-        // Update the existing story in localStorage with the new scenes
         const existingData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');
-        existingData.characters = storyboardData.characters || [];
-        existingData.scenes = storyboardData.scenes;
+        existingData.scenes = parsedScenes;
         existingData.form = { ...form.value };
         localStorage.setItem(currentStoryKey.value, JSON.stringify(existingData));
-        loadHistory();
       }
+      
+      script_topic.value = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0];
 
+      ElMessage.success(`成功解析 ${parsedScenes.length} 个分镜，准备跳转...`);
+      activeStep.value = 2;
+      useInStoryboard();
     } else {
-      ElMessage.error('生成分镜失败：无法解析返回的数据，或数据格式不正确。');
+      ElMessage.error('解析分镜失败：无法从故事文本中找到有效的分镜。请检查格式是否包含 "分镜X"、"图片提示词：" 等关键字。');
     }
-  } catch (error) {
-    console.error('生成分镜提示词失败:', error);
-    ElMessage.error('生成分镜提示词失败，请检查网络连接和API配置');
+  } catch(e) {
+    console.error('解析或保存分镜时出错:', e);
+    ElMessage.error('处理分镜时出错。');
   } finally {
     loading.value = false;
   }
 };
 
-const savePromptsFromDialog = () => {
-  try {
-    const storyboardData = JSON.parse(editableJsonString.value);
-    if (storyboardData && storyboardData.scenes && Array.isArray(storyboardData.scenes)) {
-      generatedScenes.value = storyboardData.scenes;
-      showResultDialog.value = false;
-      activeStep.value = 2;
-      ElMessage.success('分镜已保存!');
-
-      // If there's no current story key, create one.
-      if (!currentStoryKey.value) {
-        currentStoryKey.value = generateStoryKey();
-        const topic = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0] || currentStoryKey.value;
-        const data = {
-          topic: topic,
-          generated_story_text: form.value.generated_story_text,
-          characters: storyboardData.characters || [],
-          scenes: storyboardData.scenes,
-          createdAt: new Date().toISOString(),
-          form: { ...form.value, topic: topic }
-        };
-        localStorage.setItem(currentStoryKey.value, JSON.stringify(data));
-        const index = getStoryIndex();
-        index.unshift(currentStoryKey.value);
-        saveStoryIndex(index);
-        loadHistory();
-      } else {
-        // Update existing story
-        const existingData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');
-        existingData.characters = storyboardData.characters || [];
-        existingData.scenes = storyboardData.scenes;
-        localStorage.setItem(currentStoryKey.value, JSON.stringify(existingData));
-        loadHistory();
-      }
-      return true;
-    } else {
-      ElMessage.error('保存失败：格式不是一个有效的场景对象（需要包含scenes数组）。');
-      return false;
-    }
-  } catch (error) {
-    ElMessage.error('保存失败：JSON格式无效，请检查语法。');
-    return false;
-  }
-};
 
 const clearForm = () => {
   form.value = getInitialFormState();
@@ -769,10 +859,10 @@ const exportScript = () => {
 
   generatedScenes.value.forEach((scene, index) => {
     scriptContent += `【分镜 ${index + 1}】\n`;
-    scriptContent += `旁白: ${scene.narration}\n`;
-    scriptContent += `画面: ${scene.image_prompt}\n\n`;
-    scriptContent += `镜头提示词: ${scene.video_promt}\n\n`;
-    
+    scriptContent += `图片提示词: ${scene.image_prompt}\n`;
+    scriptContent += `单帧视频提示词: ${scene.single_frame_video_prompt}\n`;
+    scriptContent += `首尾帧视频提示词: ${scene.dual_frame_video_prompt}\n`;
+    scriptContent += `字幕: ${scene.subtitle_text}\n\n`;
   });
 
   const blob = new Blob([scriptContent], { type: 'text/plain;charset=utf-8' });
@@ -783,24 +873,8 @@ const exportScript = () => {
   URL.revokeObjectURL(a.href);
 };
 
-const saveAndUseInStoryboard = async () => {
-  if (savePromptsFromDialog()) {
-    try {
-      if (!script_topic.value.trim()) {
-        ElMessage.warning('保存失败，请输入脚本主题。');
-        return;
-      }
-      await FileAPI.saveText(script_topic.value, 'prompts.txt', editableJsonString.value);
-      ElMessage.success('分镜提示词已保存到服务器。');
-      useInStoryboard();
-    } catch (error) {
-      console.error('保存提示词文件失败:', error);
-      ElMessage.error('保存提示词文件到服务器失败。');
-    }
-  }
-};
-
 const useInStoryboard = () => {
+  script_topic.value = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0];
   if (!script_topic.value.trim()) {
     ElMessage.warning('请输入脚本主题');
     return;
@@ -809,8 +883,6 @@ const useInStoryboard = () => {
     ElMessage.warning('没有可用的分镜，请先生成或加载一个故事。');
     return;
   }
-  // Pass the key and a flag to indicate navigation from the generator.
-  // StoryboardView will be responsible for loading the scenes from the story record.
   localStorage.setItem('script_topic', script_topic.value || 'untitled_story');
   localStorage.setItem('current_story_key', currentStoryKey.value);
   localStorage.setItem('from_prompt_generator', 'true');
@@ -980,95 +1052,6 @@ const saveVideoDetails = () => {
   console.log('Saving video details:', videoForm.value);
   ElMessage.success('视频详情已保存（模拟）');
   showVideoResultDialog.value = false;
-};
-
-// --- JSON Parsing ---
-function sanitizeJsonText(text) {
-  if (typeof text !== 'string') return text;
-  // Remove thinking process blocks from models that include it in the response.
-  let s = text.replace(/<think>[\s\S]*?<\/think>/, '');
-  s = s.replace(/\r\n?/g, '\n').replace(/^\ufeff/, '');
-  s = s.replace(/[“”]/g, '"').replace(/[‘’]/g, "'");
-  let out = '';
-  let inQuote = false;
-  let quoteChar = '';
-  let escaped = false;
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (escaped) {
-      out += ch;
-      escaped = false;
-      continue;
-    }
-    if (ch === '\\') {
-      out += ch;
-      escaped = true;
-      continue;
-    }
-    if (inQuote) {
-      if (ch === quoteChar) {
-        inQuote = false;
-        quoteChar = '';
-        out += ch;
-      } else {
-        out += (ch === '\n' ? ' ' : ch);
-      }
-    } else {
-      if (ch === '"' || ch === "'") {
-        inQuote = true;
-        quoteChar = ch;
-      }
-      out += ch;
-    }
-  }
-  s = out;
-  s = s.replace(/,\s*([\}\]])/g, '$1');
-  return s.trim();
-}
-
-
-const parseMarkdownJson = (md) => {
-  if (md && typeof md === 'object') return md;
-  if (typeof md !== 'string') return null;
-  let text = md.replace(/\r\n?/g, '\n').replace(/^\ufeff/, '').trim();
-  if (!text) return null;
-
-  // Regex to find JSON code blocks
-  const fenceRegex = /```(?:json)?\s*([\s\S]*?)```/i;
-  const match = text.match(fenceRegex);
-
-  const tryParse = (str) => {
-    try {
-      return JSON.parse(str);
-    } catch (e) {
-      return null;
-    }
-  };
-
-  if (match && match[1]) {
-    const jsonString = match[1].trim();
-    const parsed = tryParse(jsonString);
-    if (parsed) return parsed;
-
-    // If direct parsing fails, try to sanitize it
-    const sanitized = sanitizeJsonText(jsonString);
-    const fixed = tryParse(sanitized);
-    if (fixed) return fixed;
-  }
-
-  // If no code block found, or parsing failed, try to find JSON directly in the string
-  const jsonMatch = text.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
-  if (jsonMatch && jsonMatch[0]) {
-      const jsonString = jsonMatch[0].trim();
-      const parsed = tryParse(jsonString);
-      if (parsed) return parsed;
-
-      const sanitized = sanitizeJsonText(jsonString);
-      const fixed = tryParse(sanitized);
-      if (fixed) return fixed;
-  }
-
-  return null;
 };
 
 // --- Lifecycle ---

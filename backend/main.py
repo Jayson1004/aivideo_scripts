@@ -169,20 +169,19 @@ async def bookworm_analyze(request: BookwormRequest):
 
     headers = {
         'Authorization': f'Bearer {request.token}',
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
+        'Content-Type': 'application/json'
     }
     
     payload = {
         "model": request.model,
         "stream": False,
         "messages": [msg.dict() for msg in request.messages],
-        "max_tokens": request.max_tokens,
     }
 
     async with httpx.AsyncClient(timeout=300.0) as client:
         try:
             response = await client.post("https://api.apimart.ai/v1/chat/completions", json=payload, headers=headers)
+            print(response)
             response.raise_for_status()
             # Assuming the response is JSON and we need to extract text from it.
             # This part might need adjustment based on the actual API response structure.

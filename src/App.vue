@@ -24,6 +24,6 @@ const toggleSettings = () => {
   position: fixed;
   top: 20px;
   right: 20px;
-  z-index: 999;
+  z-index: 1010;
 }
 </style>
