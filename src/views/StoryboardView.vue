@@ -99,7 +99,7 @@
               </div>
             </template>
             <div class="character-card-content">
-              <p class="character-desc">{{ person.description }}</p>
+              <textarea class="character-desc" v-model="person.description"></textarea>
               <el-image v-if="person.url" :src="person.url" fit="cover" class="character-image" @click="previewImage(person)"/>
               <el-upload
                 v-else
@@ -133,6 +133,7 @@
         <el-button @click="clearAll">清空所有</el-button>
         <el-button type="primary" :loading="isBatchGenerating" :disabled="!selectedScenes.length" @click="generateAllImages">批量生成选中图片</el-button>
         <el-button type="success" @click="openGlobalModificationDialog">智能修改所有分镜</el-button>
+        <el-button @click="sendToExtension">发送到即梦插件</el-button>
       </div>
 
       <div class="scene-grid">
@@ -266,7 +267,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ImagesAPI, FileAPI, VideosAPI, PromptAPI } from '../services/api'
@@ -311,7 +312,7 @@ const updatePeoplesFromScenes = (scenesToParse) => {
     if (scene.image_prompt) {
       let match;
       while ((match = regex.exec(scene.image_prompt)) !== null) {
-        const name = match[1].trim();
+        const name = match[1].trim().replace(/和|\*/g, '');;
         const description = match[2].trim();
         if (name && !characterMap.has(name)) {
           characterMap.set(name, { name, description, url: null, loading: false });
@@ -348,6 +349,7 @@ const generateCharacterImage = async (person) => {
     const imageUrl = await ImagesAPI.apicoreGenerateOne(personToUpdate.description, model, token, '1:1', imageSize.value, [], image_style.value, image_quality.value);
     if (imageUrl) {
       personToUpdate.url = imageUrl;
+      person.url = imageUrl
       ElMessage.success(`角色 ${person.name} 图片生成成功`);
     }
   } catch (e) {
@@ -848,6 +850,60 @@ const exportToCSV = () => {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Storyboard');
   XLSX.writeFile(workbook, `${storyTheme.value}.csv`);
+};
+
+let socket = null;
+
+onMounted(() => {
+  // Assuming the backend runs on port 8000, which is uvicorn's default
+  // socket = new WebSocket("ws://localhost:8000/ws");
+
+  // socket.onopen = () => {
+  //   console.log("WebSocket connection established.");
+  //   ElMessage.success("成功连接到后台消息服务。");
+  // };
+
+  // socket.onmessage = (event) => {
+  //   console.log("Received message from server:", event.data);
+  //   // You can handle messages from the plugin here, for example:
+  //   // const data = JSON.parse(event.data);
+  //   // if (data.type === 'confirmation_from_plugin') {
+  //   //   ElMessage.info('插件已确认收到数据。');
+  //   // }
+  // };
+
+  // socket.onclose = () => {
+  //   console.log("WebSocket connection closed.");
+  //   ElMessage.warning("与后台消息服务的连接已断开。");
+  // };
+
+  // socket.onerror = (error) => {
+  //   console.error("WebSocket error:", error);
+  //   ElMessage.error("连接后台消息服务时出错，请确保后端正在运行。");
+  // };
+});
+
+onUnmounted(() => {
+  // if (socket) {
+  //   socket.close();
+  // }
+});
+
+const sendToExtension = () => {
+  // if (socket && socket.readyState === WebSocket.OPEN) {
+  //   const data = {
+  //       type: 'storyboard_update',
+  //       payload: scenes.value
+  //   };
+  //   socket.send(JSON.stringify(data));
+  //   ElMessage.success('分镜数据已通过消息服务发送。');
+  // } else {
+  //   ElMessage.error('消息服务未连接。请刷新页面或检查后台服务。');
+  // }
+  window.postMessage({
+      type: 'JIMENG_UPLOADER_DATA',
+      payload: JSON.stringify(scenes.value)
+  })
 };
 
 watch(scenes, (newScenes) => {

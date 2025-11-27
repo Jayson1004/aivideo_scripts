@@ -10,19 +10,24 @@ export default defineConfig({
     hmr: false,
     open: false,
     proxy: {
-      '/v1beta': {
+      // Proxy for yunwu.ai services
+      '/proxy/yunwu': {
         target: 'http://yunwu.ai',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/proxy\/yunwu/, ''),
       },
-      '/v1': {
-        target: 'http://yunwu.ai',
-        changeOrigin: true,
-      },
-      '/api': {
+      // Proxy for kie.ai services
+      '/proxy/kie': {
         target: 'https://api.kie.ai',
         changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/proxy\/kie/, ''),
       },
-      
+      // Proxy for bookworm (api.apimart.ai)
+      '/proxy/bookworm': {
+        target: 'https://api.apimart.ai',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/proxy\/bookworm/, ''),
+      },
     }
   }
 })

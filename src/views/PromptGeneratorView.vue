@@ -150,20 +150,55 @@
       </template>
       <el-form :model="form" label-width="120px" style="max-width: 800px; margin:auto;">
         <el-form-item label="故事文本">
-          <el-input v-model="form.generated_story_text" type="textarea" :rows="10" placeholder="请先在第1步生成故事，或在此处直接粘贴故事文本" />
+          <el-input v-model="form.generated_story_text" type="textarea" :rows="14" placeholder="
+          请先在第1步生成故事，或在此处直接粘贴故事文本。 如果格式是:
+          分镜1
+          图片提示词： xxx 孙悟空（看手机）
+          单帧视频提示词：xxx
+          首尾帧视频提示词：xxx
+          分镜2
+          图片提示词： xxx 猪八戒（看电视）
+          单帧视频提示词：3232
+          首尾帧视频提示词：xxx.. 请不要打开下面非分镜结构文本，因为这是可直接分析的分镜结构。 
+          如果格式是这样的格式：
+          一. 故事内容
+          这是一个关于通过努力和奇遇实现梦想的励志爱情故事，发生在xxx。
+          二. 图片提示词
+          [主体]角色：Sakura（亚洲女性，体型肥胖）和Naruto（亚洲男性）。
+          表情：开心
+          动作：Sakura双手贴在xxx
+          [环境]水族馆内部，背景xxx。
+          [时间]白天
+          [天气]晴
+          [视角]平视
+          [景别]中景
+          三. 单帧视频提示词
+          [Sakura嘟起嘴唇亲吻玻璃，
+          视频画面连贯，流畅，符合现实运动规则，不要出现其他角色。
+          四. 字幕
+          我...
+          终于要见到他了！
+          五. 首尾帧视频提示词
+          图片 [shot1] → 图片 [shot2]
+          [前3秒：Sakuraxxx，Naruto在xxx] + [后2秒：Sakuraxxx，场景切换到街道]。[浪漫转为活力]。[无缝转场，动态模糊]
+          图片 [shot2] → 图片 [shot3]
+          [前3秒：Sakura在xxx] + [后2秒：Sakura跑xxx，MermaidShopOwner举起xxx]。[充满希望到遭遇挫折]。[跟随镜头]
+          ，（GAS可以根据提示词生成的结构）请打开开关。" />
         </el-form-item>
-        <el-form-item label="生成语言">
+        <el-form-item>
+          <el-switch v-model="isUnstructuredText" active-text="非分镜结构文本" />
+        </el-form-item>
+        <!-- <el-form-item label="生成语言">
           <el-radio-group v-model="form.language">
             <el-radio label="chinese">中文</el-radio>
             <el-radio label="english">English</el-radio>
           </el-radio-group>
-        </el-form-item>
-        <el-form-item label="视频风格">
-          <!-- <el-input v-model="form.style" placeholder="例如：cinematic, anime, documentary, 3D cartoon" /> -->
+        </el-form-item> -->
+        <!-- <el-form-item label="视频风格">
           <el-select v-model="form.style" placeholder="选择视频风格" style="width:160px;">
             <el-option v-for="style in styleOptions" :key="style.value" :label="style.label" :value="style.value" />
           </el-select>
-        </el-form-item>
+        </el-form-item> -->
       </el-form>
       <div style="display:flex; gap:12px; justify-content: center; margin-top: 20px;">
         <el-button type="primary" size="large" :loading="loading" @click="generateStoryboardPrompts" :disabled="!form.generated_story_text.trim()">生成分镜提示词</el-button>
@@ -208,6 +243,7 @@ const generatedScenes = ref([])
 const showHistoryDialog = ref(false)
 const savedStories = ref([])
 const currentStoryKey = ref(null)
+const isUnstructuredText = ref(false)
 
 // Video Generation State
 const videoLoading = ref(false);
@@ -747,6 +783,60 @@ const generateStory = async () => {
   }
 };
 
+const parseexStoryboardScript = (scriptText) => {
+    // 1. 使用正则表达式将文本分割成不同部分
+    const sections = {
+        story: scriptText.match(/一\. 故事内容\s*([\s\S]*?)(?=\s*二\.|$)/)?.[1]?.trim() || '',
+        imagePrompts: scriptText.match(/二\. 图片提示词\s*([\s\S]*?)(?=\s*三\.|$)/)?.[1]?.trim() || '',
+        videoPrompts: scriptText.match(/三\. 单帧视频提示词\s*([\s\S]*?)(?=\s*四\.|$)/)?.[1]?.trim() || '',
+        subtitles: scriptText.match(/四\. 字幕\s*([\s\S]*?)(?=\s*五\.|$)/)?.[1]?.trim() || '',
+        frameVideoPrompts: scriptText.match(/五\. 首尾帧视频提示词\s*([\s\S]*?)$/)?.[1]?.trim() || ''
+    };
+
+    // 2. 将每个部分的内容分割成单独的条目数组 (新的分割逻辑)
+    const imagePromptItems = sections.imagePrompts.split(/(?=\[主体\])/g).map(p => p.trim()).filter(Boolean);
+    
+    // 使用独特的句子作为分隔符
+    const videoPromptDelimiter = '视频画面连贯，流畅，符合现实运动规则，不要出现其他角色。';
+    const videoPromptItems = sections.videoPrompts.split(videoPromptDelimiter).map(p => p.trim()).filter(Boolean);
+
+    // 字幕按行分割
+    const subtitleItems = sections.subtitles.split('\n').map(p => p.trim()).filter(Boolean);
+
+    // 使用 "图片 [shotX] → 图片 [shotY]" 模式作为分隔符
+    const frameVideoPromptItems = sections.frameVideoPrompts.split(/(?=图片 \[\w+\] → 图片 \[\w+\])/g).map(p => p.trim()).filter(Boolean);
+
+    // 3. 将分割后的条目重组成标准的分镜对象数组
+    const scenes = [];
+    const sceneCount = imagePromptItems.length;
+
+    if (sceneCount === 0) {
+        console.warn("未能解析到任何图片提示词，无法生成分镜。");
+        return { story: sections.story, scenes: [] };
+    }
+
+    for (let i = 0; i < sceneCount; i++) {
+        const scene = {
+            image_prompt: imagePromptItems[i] || '',
+            single_frame_video_prompt: videoPromptItems[i] || '',
+            subtitle_text: subtitleItems[i] || '',
+            dual_frame_video_prompt: frameVideoPromptItems[i] || '',
+            image_url: null,
+            videoUrl: null,
+            videoId: null,
+            videoStatus: '',
+            videoProgress: 0,
+            videoProvider: '',
+            videoErrorMessage: '',
+            selected: false,
+            generationDetails: {},
+        };
+        scenes.push(scene);
+    }
+
+    return { story: sections.story, scenes };
+}
+
 const parseStoryboardScript = (scriptText) => {
   if (!scriptText) return [];
 
@@ -778,6 +868,28 @@ const parseStoryboardScript = (scriptText) => {
   return scenes;
 };
 
+const parseUnstructuredText = (text) => {
+  if (!text || !text.trim()) return [];
+  // Split by one or more empty lines
+  const paragraphs = text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  
+  return paragraphs.map(p => ({
+    image_prompt: p,
+    single_frame_video_prompt: '',
+    dual_frame_video_prompt: '',
+    subtitle_text: '',
+    image_url: null,
+    videoUrl: null,
+    videoId: null,
+    videoStatus: '',
+    videoProgress: 0,
+    videoProvider: '',
+    videoErrorMessage: '',
+    selected: false,
+    generationDetails: {},
+  }));
+};
+
 const generateStoryboardPrompts = async () => {
   if (!form.value.generated_story_text.trim()) {
     ElMessage.warning('故事文本不能为空，请先生成或粘贴故事。');
@@ -785,7 +897,23 @@ const generateStoryboardPrompts = async () => {
   }
   loading.value = true;
   try {
-    const parsedScenes = parseStoryboardScript(form.value.generated_story_text);
+    let parsedScenes;
+    if (isUnstructuredText.value) {
+      const semiStructuredResult = parseexStoryboardScript(form.value.generated_story_text);
+        parsedScenes = semiStructuredResult.scenes;
+    } else {
+      // Try the highly structured "分镜X" format first
+      parsedScenes = parseStoryboardScript(form.value.generated_story_text);
+      // If that fails, try the semi-structured "一. 二." format
+      if (parsedScenes.length === 0) {
+        const semiStructuredResult = parseexStoryboardScript(form.value.generated_story_text);
+        parsedScenes = semiStructuredResult.scenes;
+        if (parsedScenes.length > 0) {
+          ElMessage.info('检测到“一. 二.”格式的文案，已成功解析。');
+        }
+      }
+    }
+
     if (parsedScenes.length > 0) {
       generatedScenes.value = parsedScenes;
       
@@ -793,8 +921,6 @@ const generateStoryboardPrompts = async () => {
         currentStoryKey.value = generateStoryKey();
         const topic = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0] || currentStoryKey.value;
         const data = {
-          // topic: topic,
-          // generated_story_text: form.value.generated_story_text,
           scenes: parsedScenes,
           createdAt: new Date().toISOString(),
           form: { ...form.value, topic: topic }
@@ -817,7 +943,7 @@ const generateStoryboardPrompts = async () => {
       activeStep.value = 2;
       useInStoryboard();
     } else {
-      ElMessage.error('解析分镜失败：无法从故事文本中找到有效的分镜。请检查格式是否包含 "分镜X"、"图片提示词：" 等关键字。');
+      ElMessage.error('解析分镜失败：无法从故事文本中找到有效的分镜。请检查格式，或尝试打开“非分镜结构文本”开关。');
     }
   } catch(e) {
     console.error('解析或保存分镜时出错:', e);

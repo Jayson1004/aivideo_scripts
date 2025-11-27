@@ -2,7 +2,7 @@ import os
 import json
 import httpx
 import aiofiles
-from fastapi import FastAPI, HTTPException, Body, Request
+from fastapi import FastAPI, HTTPException, Body, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
@@ -10,6 +10,25 @@ from pydantic_settings import BaseSettings
 from typing import List, Dict, Any
 import datetime
 import base64
+
+# --- WebSocket Connection Manager ---
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def broadcast(self, message: str, sender: WebSocket = None):
+        for connection in self.active_connections:
+            if connection != sender:
+                await connection.send_text(message)
+
+manager = ConnectionManager()
 
 # --- Configuration ---
 class Settings(BaseSettings):
@@ -541,6 +560,19 @@ async def generate_storyboard(request: StoryboardRequest = Body(...)):
 @app.options("/api/generate-storyboard")
 async def options_generate_storyboard():
     return Response(status_code=200)
+
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await manager.connect(websocket)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # When data is received, broadcast it to all other clients
+            await manager.broadcast(data, sender=websocket)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+        print("A client disconnected.")
 
 
 # --- Root endpoint for health check ---
