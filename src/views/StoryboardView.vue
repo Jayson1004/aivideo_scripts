@@ -10,6 +10,10 @@
       </template>
     </el-page-header>
 
+    <el-input v-model="storyTheme" placeholder="为你的故事起个名字吧" size="large" style="margin-top:16px;">
+      <template #prepend>故事主题</template>
+    </el-input>
+
     <el-card style="margin-top:12px;">
 
       <el-form label-width="80px" inline>
@@ -354,6 +358,10 @@ const generateCharacterImage = async (person) => {
     if (imageUrl) {
       personToUpdate.url = imageUrl;
       person.url = imageUrl
+      // const response = await FileAPI.saveImage(storyTheme.value, `${storyTheme.value}.png`, imageUrl);
+      // if (response && response.url) {
+      //   person.saveImgUrl = response.url; // Replace Base64 with new URL on the copy
+      // }
       ElMessage.success(`角色 ${person.name} 图片生成成功`);
     }
   } catch (e) {
@@ -405,6 +413,7 @@ const handleImportClick = () => {
 const handleFileSelected = (event) => {
   const file = event.target.files[0];
   if (!file) return;
+
   const reader = new FileReader();
   reader.onload = (e) => {
     try {
@@ -412,22 +421,72 @@ const handleFileSelected = (event) => {
       const workbook = XLSX.read(data, { type: 'array' });
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-      if (json.length < 2) return ElMessage.warning('文件为空或只有标题行');
-      if (scenes.value.length === 1 && !scenes.value[0].image_prompt && !scenes.value[0].single_frame_video_prompt) scenes.value = [];
+      if (json.length < 2) {
+        ElMessage.warning('文件为空或只有标题行');
+        return;
+      }
 
-      let importedCount = 0;
+      const newScenes = [];
       for (let i = 1; i < json.length; i++) {
         const row = json[i];
         if (!row[0]?.trim() && !row[1]?.trim()) continue;
-        scenes.value.push(createNewScene({
+        newScenes.push(createNewScene({
           image_prompt: row[0] || '',
           single_frame_video_prompt: row[1] || '',
           dual_frame_video_prompt: row[2] || '',
           subtitle_text: row[3] || '',
         }));
-        importedCount++;
       }
-      if (importedCount > 0) ElMessage.success(`成功导入 ${importedCount} 条分镜。`);
+
+      if (newScenes.length > 0) {
+        const newTopic = `导入脚本 ${new Date().toLocaleString()}`;
+        const newKey = generateStoryKey();
+
+        // Derive peoples from the newly parsed scenes before saving
+        const characterMap = new Map();
+        const regex = /(?:角色：)?([\u4e00-\u9fa5a-zA-Z0-9]+?)[(（](.*?)[)）]/g;
+        for (const scene of newScenes) {
+            if (scene.image_prompt) {
+                let match;
+                while ((match = regex.exec(scene.image_prompt)) !== null) {
+                    const name = match[1].trim().replace(/和|\*/g, '');
+                    const description = match[2].trim();
+                    if (name && !characterMap.has(name)) {
+                        characterMap.set(name, { name, description, url: null, loading: false });
+                    }
+                }
+            }
+        }
+        const newPeoples = Array.from(characterMap.values());
+
+        // Create the full story object and save it to localStorage immediately.
+        const newStoryData = {
+          key: newKey,
+          topic: newTopic,
+          scenes: newScenes,
+          peoples: newPeoples,
+          createdAt: new Date().toISOString(),
+          form: {}, // Add empty form for consistency
+        };
+        localStorage.setItem(newKey, JSON.stringify(newStoryData));
+
+        // Now that data is saved, update the history index and UI.
+        const index = getStoryIndex();
+        index.unshift(newKey);
+        saveStoryIndex(index);
+        loadHistory();
+
+        // Update the reactive state for the current session.
+        currentStoryKey.value = newKey;
+        storyTheme.value = newTopic;
+        scenes.value = newScenes;
+        peoples.value = newPeoples;
+
+        ElMessage.success(`成功导入 ${newScenes.length} 条新分镜，已创建新的脚本记录。`);
+      } else {
+        ElMessage.warning('在文件中没有找到有效的分镜数据。');
+      }
+
     } catch (error) {
       console.error("文件解析失败:", error);
       ElMessage.error('文件解析失败，请确保文件格式正确。');
@@ -656,12 +715,23 @@ const clearAll = () => { scenes.value = [createNewScene()]; peoples.value = []; 
 
 const storyTheme = ref('')
 
-const loadStory = (key, closeDialog = true) => {
+const loadStory = (key, closeDialog = true, isFromGenerator = false) => {
   const data = JSON.parse(localStorage.getItem(key) || '{}');
   if (data.scenes && Array.isArray(data.scenes)) {
     scenes.value = data.scenes.map(s => createNewScene(s));
-    updatePeoplesFromScenes(scenes.value);
-    storyTheme.value = localStorage.getItem('script_topic') || data.form.topic || 'storyboard';
+
+    if (data.peoples && data.peoples.length > 0) {
+        peoples.value = data.peoples;
+    } else {
+        updatePeoplesFromScenes(scenes.value);
+    }
+
+    if (isFromGenerator) {
+      storyTheme.value = localStorage.getItem('script_topic') || data.topic || '';
+    } else {
+      storyTheme.value = data.topic || '';
+    }
+
     currentStoryKey.value = key;
     if (closeDialog) showHistoryDialog.value = false;
     updateSelection();
@@ -695,9 +765,12 @@ const generateImageForScene = async (sceneIndex) => {
 
     if (imageUrl) {
       scenes.value[sceneIndex].image_url = imageUrl;
-      scenes.value[sceneIndex].generationDetails = { prompt: finalPrompt, provider: model, size: imageSize.value, style: image_style.value, quality: image_quality.value };
+      scenes.value[sceneIndex].generationDetails = { provider: model, size: imageSize.value, style: image_style.value, quality: image_quality.value };
       ElMessage.success(`分镜 ${sceneIndex + 1} 图片生成成功`);
-      await FileAPI.saveImage(storyTheme.value, `${storyTheme.value}_scene_${sceneIndex + 1}_${Date.now()}.png`, imageUrl);
+      const response = await FileAPI.saveImage(storyTheme.value, `${storyTheme.value}_scene_${sceneIndex + 1}_${Date.now()}.png`, imageUrl);
+      if (response && response.url) {
+        scenes.value[sceneIndex].saveImgUrl = response.url; // Replace Base64 with new URL on the copy
+      }
       return true;
     }
   } catch (e) {
@@ -818,7 +891,10 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
     if (isDone) {
       if (scene.videoUrl) {
         ElMessage.success(`分镜 ${sceneIndex + 1} 视频已生成`);
-        await FileAPI.saveImage(storyTheme.value, `${storyTheme.value}_scene_${sceneIndex + 1}_video.mp4`, scene.videoUrl);
+        const response = await FileAPI.saveImage(storyTheme.value, `${storyTheme.value}_scene_${sceneIndex + 1}_video.mp4`, scene.videoUrl);
+        if (response && response.url) {
+          scene.saveVideoUrl = response.url; // Replace Base64 with new URL on the copy
+        }
       } else {
         ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${scene.videoErrorMessage}`);
       }
@@ -837,6 +913,13 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
 };
 
 const getStoryIndex = () => JSON.parse(localStorage.getItem('story_index') || '[]');
+const saveStoryIndex = (index) => localStorage.setItem('story_index', JSON.stringify(index));
+
+const generateStoryKey = () => {
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const random = Math.floor(Math.random() * 100000).toString().padStart(5, '0');
+  return `story_${date}_${random}`;
+};
 
 
 const loadHistory = () => {
@@ -916,46 +999,92 @@ const sendToExtension = () => {
 
 watch(scenes, (newScenes) => {
   updatePeoplesFromScenes(newScenes);
+  debouncedSave(); // Auto-save on changes
 }, { deep: true });
 
+watch(storyTheme, () => {
+  debouncedSave();
+});
+
+// Helper to debounce function calls
+const debounce = (fn, delay) => {
+  let timeoutId;
+  return (...args) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+};
+
+// Function to save the current state of the storyboard
+const saveCurrentStory = async () => {
+  if (!currentStoryKey.value) return;
+
+  try {
+    // Create deep copies to modify before saving
+    const scenesToSave = JSON.parse(JSON.stringify(scenes.value));
+    const peoplesToSave = JSON.parse(JSON.stringify(peoples.value));
+
+    // --- Upload Logic ---
+    for (const person of peoplesToSave) {
+        if (person.url && person.url.startsWith('data:image')) {
+            try {
+                const filename = `character_${person.name.replace(/\s+/g, '_')}_${Date.now()}.png`;
+                const response = await FileAPI.saveImage(storyTheme.value, filename, person.url);
+                if (response && response.url) {
+                    person.url = response.url; // Replace Base64 with new URL on the copy
+                }
+            } catch (e) { person.url = '', console.error(`Failed to upload image for ${person.name}:`, e); }
+        }
+    }
+    // You can add similar logic for scene.image_url or scene.videoUrl here if they can be Base64
+    for (const scene of scenesToSave) {
+        if (scene.image_url && scene.image_url.startsWith('data:image')) {
+          scene.image_url = scene.saveImgUrl
+        }
+        // if (scene.image_url && scene.image_url.startsWith('data:image')) {
+        //   scene.image_url = scene.saveImgUrl
+        // }
+    }
+    // --- End Upload Logic ---
+
+    const storyData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');
+    const dataToSave = {
+      ...storyData,
+      topic: storyTheme.value,
+      scenes: scenesToSave, // Save the modified copy
+      peoples: peoplesToSave, // Save the modified copy
+      createdAt: storyData.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    localStorage.setItem(currentStoryKey.value, JSON.stringify(dataToSave));
+    
+  } catch (e) {
+    console.error("Failed to save story:", e);
+  }
+};
+
+const debouncedSave = debounce(saveCurrentStory, 1500); // Debounce save by 1.5 seconds
+
 onMounted(() => {
-  storyTheme.value = localStorage.getItem('script_topic') || localStorage.getItem('story_theme') || 'storyboard';
   loadHistory();
-  const fromGenerator = localStorage.getItem('from_prompt_generator');
   const incomingStoryKey = localStorage.getItem('current_story_key');
-  if (fromGenerator === 'true') {
-    localStorage.removeItem('from_prompt_generator');
-    const savedStateJSON = localStorage.getItem('storyboard_state');
-    let stateLoaded = false;
-    if (savedStateJSON) {
-      try {
-        const savedState = JSON.parse(savedStateJSON);
-        if (savedState.currentStoryKey === incomingStoryKey) {
-          scenes.value = savedState.scenes;
-          updatePeoplesFromScenes(scenes.value);
-          currentStoryKey.value = savedState.currentStoryKey;
-          ElMessage.success('已恢复您对该故事的编辑');
-          stateLoaded = true;
-        }
-      } catch (e) { console.error("解析 storyboard_state 失败", e); }
-    }
-    if (!stateLoaded && incomingStoryKey) {
-      ElMessage.info('加载新故事分镜...');
-      loadStory(incomingStoryKey, false);
-    }
+  // We clear this key immediately. It's a one-time signal from the generator.
+  // If the user refreshes, this key will be null, and we'll fall through to loading the latest.
+  localStorage.removeItem('current_story_key');
+  localStorage.removeItem('from_prompt_generator'); // also clear this legacy one
+
+  if (incomingStoryKey) {
+    loadStory(incomingStoryKey, false, true); // Pass true for isFromGenerator
+  } else if (savedStories.value.length > 0) {
+    const latestStoryKey = savedStories.value[0].key;
+    loadStory(latestStoryKey, false, false); // Pass false
+    ElMessage.success('已自动加载最新的脚本');
   } else {
-    const savedStateJSON = localStorage.getItem('storyboard_state');
-    if (savedStateJSON) {
-      try {
-        const savedState = JSON.parse(savedStateJSON);
-        if (savedState.scenes && Array.isArray(savedState.scenes)) {
-          scenes.value = savedState.scenes;
-          updatePeoplesFromScenes(scenes.value);
-          currentStoryKey.value = savedState.currentStoryKey;
-          ElMessage.success('已恢复上次的编辑状态');
-        }
-      } catch (e) { console.error("解析 storyboard_state 失败", e); localStorage.removeItem('storyboard_state'); }
-    }
+    // Fresh session
+    scenes.value = [createNewScene()];
+    currentStoryKey.value = null;
+    ElMessage.info('这是一个新的分镜，您可以从历史记录中加载脚本。');
   }
 });
 

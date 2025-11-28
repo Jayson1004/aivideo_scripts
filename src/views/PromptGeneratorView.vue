@@ -28,6 +28,9 @@
         </div>
       </template>
       <el-form :model="form" label-width="100px" style="max-width: 800px; margin:auto;">
+        <el-form-item label="故事主题">
+          <el-input v-model="form.topic" placeholder="请输入故事主题，可不填" />
+        </el-form-item>
         <el-form-item label="模型选择" v-if="form.generate_story_type !== '3'">
           <el-select v-model="form.model" placeholder="选择语言模型" style="width: 100%;">
             <el-option-group label="OpenAI">
@@ -761,13 +764,15 @@ const generateStory = async () => {
 
     // Auto-save the new story
     currentStoryKey.value = generateStoryKey();
-    const topic = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0] || currentStoryKey.value;
+    const topic = (form.value.topic || '').trim() || `未命名故事 ${new Date().toLocaleString()}`;
+    form.value.topic = topic; // Ensure topic is set in the form for later use
+
     const data = {
       topic: topic,
       generated_story_text: form.value.generated_story_text,
       scenes: [],
       createdAt: new Date().toISOString(),
-      form: { ...form.value, topic: topic } // Save the derived topic back to the form state
+      form: { ...form.value } // form already has the updated topic
     };
     localStorage.setItem(currentStoryKey.value, JSON.stringify(data));
     const index = getStoryIndex();
@@ -919,25 +924,28 @@ const generateStoryboardPrompts = async () => {
       
       if (!currentStoryKey.value) {
         currentStoryKey.value = generateStoryKey();
-        const topic = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0] || currentStoryKey.value;
-        const data = {
-          scenes: parsedScenes,
-          createdAt: new Date().toISOString(),
-          form: { ...form.value, topic: topic }
-        };
-        localStorage.setItem(currentStoryKey.value, JSON.stringify(data));
         const index = getStoryIndex();
         index.unshift(currentStoryKey.value);
         saveStoryIndex(index);
         loadHistory();
-      } else {
-        const existingData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');
-        existingData.scenes = parsedScenes;
-        existingData.form = { ...form.value };
-        localStorage.setItem(currentStoryKey.value, JSON.stringify(existingData));
       }
+
+      // Always update the record, whether it's new or existing
+      const topic = (form.value.topic || '').trim() || `未命名故事 ${new Date().toLocaleString()}`;
+      form.value.topic = topic; // Update form state
+
+      const existingData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');
+      const newData = {
+          ...existingData,
+          topic: topic,
+          generated_story_text: form.value.generated_story_text, // ensure story text is also updated
+          scenes: parsedScenes,
+          form: { ...form.value },
+          createdAt: existingData.createdAt || new Date().toISOString(),
+      };
+      localStorage.setItem(currentStoryKey.value, JSON.stringify(newData));
       
-      script_topic.value = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0];
+      script_topic.value = topic;
 
       ElMessage.success(`成功解析 ${parsedScenes.length} 个分镜，准备跳转...`);
       activeStep.value = 2;
@@ -1000,7 +1008,7 @@ const exportScript = () => {
 };
 
 const useInStoryboard = () => {
-  script_topic.value = form.value.topic.trim() || form.value.generated_story_text.split(/[.!?。！？]/)[0];
+  script_topic.value = (form.value.topic || '').trim() || (form.value.generated_story_text || '').split(/[.!?。！？]/)[0];
   if (!script_topic.value.trim()) {
     ElMessage.warning('请输入脚本主题');
     return;
