@@ -1,6 +1,6 @@
 <template>
   <div style="padding:16px;">
-    <el-page-header content="分镜图片生成" @back="goBack">
+    <el-page-header content="分镜制作流程" @back="goBack">
       <template #extra>
         <div style="display: flex; align-items: center; gap: 16px;">
           <el-button @click="showHistoryDialog = true">历史记录</el-button>
@@ -733,14 +733,18 @@ const generateVideoForScene = async (sceneIndex) => {
   const scene = scenes.value[sceneIndex];
   videoGenerationLoading.value[sceneIndex] = true;
   try {
-    const prompt = `${scene.image_prompt} ${scene.single_frame_video_prompt}`.trim();
+    const prompt = `${scene.single_frame_video_prompt}`.trim();
     if (!prompt) {
       videoGenerationLoading.value[sceneIndex] = false;
-      return ElMessage.warning('请至少输入图片或视频提示词');
+      return ElMessage.warning('请输入单帧视频提示词');
     }
     scene.videoProvider = videoProvider.value;
     const providerName = scene.videoProvider.replace('-sora', '');
-    const options = { model: 'sora', prompt, seconds: parseInt(videoSeconds.value, 10), size: videoSize.value, watermark: videoWatermark.value, is_private: videoIsPrivate.value, n_frames: parseInt(videoSeconds.value, 10), remove_watermark: !videoWatermark.value };
+    const options = { model: 'sora', prompt, seconds: parseInt(videoSeconds.value, 10),
+     size: videoSize.value, watermark: videoWatermark.value, is_private: videoIsPrivate.value,
+      n_frames: parseInt(videoSeconds.value, 10), remove_watermark: !videoWatermark.value,
+      image_url: scene.image_url
+    };
 
     if (providerName === 'yunwu') {
       options.aspect_ratio = videoSize.value;
@@ -795,7 +799,7 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
     if (providerName === 'yunwu') {
       scene.videoStatus = statusResponse.status;
       scene.videoProgress = statusResponse.progress || 0;
-      if (statusResponse.status === 'completed') { scene.videoUrl = statusResponse.videoUrl; isDone = true; }
+      if (statusResponse.status === 'completed') { scene.videoUrl = statusResponse.video_url; isDone = true; }
       else if (statusResponse.status === 'failed' || statusResponse.status === 'error') { scene.videoErrorMessage = statusResponse.error?.message || '未知错误'; isDone = true; }
     } else if (providerName === 'kie') {
       if (statusResponse.code === 200) {

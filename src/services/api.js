@@ -184,12 +184,15 @@ export const VideosAPI = {
         url = '/proxy/yunwu/v1/videos';
         // Yunwu expects form-data for this endpoint
         const formData = new FormData();
+        const { mime_type, bytes } = data_url_to_bytes(options.image_url);
+        formData.append('input_reference', new Blob([bytes], { type: mime_type }));
         formData.append('model', 'sora-2');
         formData.append('prompt', options.prompt);
         formData.append('seconds', options.seconds);
         formData.append('size', options.size);
         formData.append('watermark', options.watermark);
         formData.append('private', options.is_private);
+        
         payload = formData;
         headers['Content-Type'] = 'multipart/form-data';
     } else if (provider === "kie") {
