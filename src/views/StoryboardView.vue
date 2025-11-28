@@ -768,8 +768,8 @@ const generateImageForScene = async (sceneIndex) => {
       scenes.value[sceneIndex].generationDetails = { provider: model, size: imageSize.value, style: image_style.value, quality: image_quality.value };
       ElMessage.success(`分镜 ${sceneIndex + 1} 图片生成成功`);
       const response = await FileAPI.saveImage(storyTheme.value, `${storyTheme.value}_scene_${sceneIndex + 1}_${Date.now()}.png`, imageUrl);
-      if (response && response.url) {
-        scenes.value[sceneIndex].saveImgUrl = response.url; // Replace Base64 with new URL on the copy
+      if (response && response.path) {
+        scenes.value[sceneIndex].saveImgUrl = response.path; // Replace Base64 with new URL on the copy
       }
       return true;
     }
@@ -892,8 +892,8 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
       if (scene.videoUrl) {
         ElMessage.success(`分镜 ${sceneIndex + 1} 视频已生成`);
         const response = await FileAPI.saveImage(storyTheme.value, `${storyTheme.value}_scene_${sceneIndex + 1}_video.mp4`, scene.videoUrl);
-        if (response && response.url) {
-          scene.saveVideoUrl = response.url; // Replace Base64 with new URL on the copy
+        if (response && response.path) {
+          scene.saveVideoUrl = response.path; // Replace Base64 with new URL on the copy
         }
       } else {
         ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${scene.videoErrorMessage}`);
@@ -1030,8 +1030,8 @@ const saveCurrentStory = async () => {
             try {
                 const filename = `character_${person.name.replace(/\s+/g, '_')}_${Date.now()}.png`;
                 const response = await FileAPI.saveImage(storyTheme.value, filename, person.url);
-                if (response && response.url) {
-                    person.url = response.url; // Replace Base64 with new URL on the copy
+                if (response && response.path) {
+                    person.url = response.path; // Replace Base64 with new URL on the copy
                 }
             } catch (e) { person.url = '', console.error(`Failed to upload image for ${person.name}:`, e); }
         }
