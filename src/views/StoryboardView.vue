@@ -326,7 +326,11 @@ const updatePeoplesFromScenes = (scenesToParse) => {
 const handleCharacterImageChange = (file, person) => {
   const personToUpdate = peoples.value.find(p => p.name === person.name);
   if (personToUpdate) {
-    personToUpdate.url = URL.createObjectURL(file.raw);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      personToUpdate.url = e.target.result;
+    };
+    reader.readAsDataURL(file.raw);
   }
 };
 
