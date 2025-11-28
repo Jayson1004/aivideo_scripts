@@ -789,26 +789,25 @@ const generateStory = async () => {
 };
 
 const parseexStoryboardScript = (scriptText) => {
-    // 1. 使用正则表达式将文本分割成不同部分
+    // 1. 使用正则表达式将文本分割成不同部分 (使其对分隔符更具容错性)
     const sections = {
-        story: scriptText.match(/一\. 故事内容\s*([\s\S]*?)(?=\s*二\.|$)/)?.[1]?.trim() || '',
-        imagePrompts: scriptText.match(/二\. 图片提示词\s*([\s\S]*?)(?=\s*三\.|$)/)?.[1]?.trim() || '',
-        videoPrompts: scriptText.match(/三\. 单帧视频提示词\s*([\s\S]*?)(?=\s*四\.|$)/)?.[1]?.trim() || '',
-        subtitles: scriptText.match(/四\. 字幕\s*([\s\S]*?)(?=\s*五\.|$)/)?.[1]?.trim() || '',
-        frameVideoPrompts: scriptText.match(/五\. 首尾帧视频提示词\s*([\s\S]*?)$/)?.[1]?.trim() || ''
+        story: scriptText.match(/一[.\、]\s*故事内容\s*([\s\S]*?)(?=\s*二[.\、]|$)/)?.[1]?.trim() || '',
+        imagePrompts: scriptText.match(/二[.\、]\s*图片提示词\s*([\s\S]*?)(?=\s*三[.\、]|$)/)?.[1]?.trim() || '',
+        videoPrompts: scriptText.match(/三[.\、]\s*单帧视频提示词\s*([\s\S]*?)(?=\s*四[.\、]|$)/)?.[1]?.trim() || '',
+        subtitles: scriptText.match(/四[.\、]\s*字幕\s*([\s\S]*?)(?=\s*五[.\、]|$)/)?.[1]?.trim() || '',
+        frameVideoPrompts: scriptText.match(/五[.\、]\s*首尾帧视频提示词\s*([\s\S]*?)$/)?.[1]?.trim() || ''
     };
 
-    // 2. 将每个部分的内容分割成单独的条目数组 (新的分割逻辑)
+    // 2. 将每个部分的内容分割成单独的条目数组
     const imagePromptItems = sections.imagePrompts.split(/(?=\[主体\])/g).map(p => p.trim()).filter(Boolean);
     
-    // 使用独特的句子作为分隔符
     const videoPromptDelimiter = '视频画面连贯，流畅，符合现实运动规则，不要出现其他角色。';
-    const videoPromptItems = sections.videoPrompts.split(videoPromptDelimiter).map(p => p.trim()).filter(Boolean);
+    const videoPromptItems = sections.videoPrompts.split(videoPromptDelimiter).map(p => {
+        return p.trim() ? (p.trim() + ' ' + videoPromptDelimiter).trim() : '';
+    }).filter(Boolean);
 
-    // 字幕按行分割
     const subtitleItems = sections.subtitles.split('\n').map(p => p.trim()).filter(Boolean);
-
-    // 使用 "图片 [shotX] → 图片 [shotY]" 模式作为分隔符
+    
     const frameVideoPromptItems = sections.frameVideoPrompts.split(/(?=图片 \[\w+\] → 图片 \[\w+\])/g).map(p => p.trim()).filter(Boolean);
 
     // 3. 将分割后的条目重组成标准的分镜对象数组
@@ -820,12 +819,13 @@ const parseexStoryboardScript = (scriptText) => {
         return { story: sections.story, scenes: [] };
     }
 
+    // 首先创建所有分镜
     for (let i = 0; i < sceneCount; i++) {
         const scene = {
             image_prompt: imagePromptItems[i] || '',
             single_frame_video_prompt: videoPromptItems[i] || '',
             subtitle_text: subtitleItems[i] || '',
-            dual_frame_video_prompt: frameVideoPromptItems[i] || '',
+            dual_frame_video_prompt: '', // 初始化为空
             image_url: null,
             videoUrl: null,
             videoId: null,
@@ -838,6 +838,18 @@ const parseexStoryboardScript = (scriptText) => {
         };
         scenes.push(scene);
     }
+
+    // 智能地分配 dual_frame_video_prompts
+    const shotRegex = /图片\s*\[shot(\d+)\]\s*→\s*图片\s*\[shot(\d+)\]/;
+    frameVideoPromptItems.forEach(prompt => {
+        const match = prompt.match(shotRegex);
+        if (match) {
+            const fromIndex = parseInt(match[1], 10) - 1;
+            if (fromIndex >= 0 && fromIndex < scenes.length) {
+                scenes[fromIndex].dual_frame_video_prompt = prompt;
+            }
+        }
+    });
 
     return { story: sections.story, scenes };
 }
