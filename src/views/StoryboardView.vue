@@ -155,7 +155,7 @@
 
           <div class="scene-content">
             <div class="prompt-fields">
-              <el-input v-model="scene.image_prompt" type="textarea" :rows="4" placeholder="图片提示词..." />
+              <el-input v-model="scene.image_prompt" type="textarea" :rows="6" placeholder="图片提示词..." />
               <el-input v-model="scene.single_frame_video_prompt" type="textarea" :rows="4" placeholder="单帧视频提示词..." />
               <el-input v-model="scene.dual_frame_video_prompt" type="textarea" :rows="1" placeholder="首尾帧视频提示词..." />
               <el-input v-model="scene.subtitle_text" type="textarea" :rows="1" placeholder="字幕..." />
@@ -308,6 +308,16 @@ const peoples = ref([]);
 // --- Character Extraction and Management ---
 const updatePeoplesFromScenes = (scenesToParse) => {
   const characterMap = new Map();
+  
+  // Preserve existing peoples first
+  if (peoples.value && peoples.value.length > 0) {
+    peoples.value.forEach(p => {
+      if (p && p.name) {
+        characterMap.set(p.name, p);
+      }
+    });
+  }
+
   // Regex to handle both "Name(Description)" and "角色：Name(Description)"
   // The name part `([\u4e00-\u9fa5a-zA-Z0-9]+?)` ensures it's a continuous sequence of allowed characters.
   const regex = /(?:角色：)?([\u4e00-\u9fa5a-zA-Z0-9]+?)[(（](.*?)[)）]/g;
@@ -993,7 +1003,7 @@ const sendToExtension = () => {
   // }
   window.postMessage({
       type: 'JIMENG_UPLOADER_DATA',
-      payload: JSON.stringify(scenes.value)
+      payload: JSON.stringify({scenes: scenes.value, peoples: peoples.value})
   })
 };
 
@@ -1105,9 +1115,9 @@ watch(showModificationDialog, (newVal) => {
 }
 
 .scene-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(600px, 1fr));
-  gap: 16px;
+  /* display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(600px, 1fr)); */
+  /* gap: 16px; */
 }
 
 .scene-card .card-header {

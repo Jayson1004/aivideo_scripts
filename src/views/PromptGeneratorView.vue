@@ -798,6 +798,27 @@ const parseexStoryboardScript = (scriptText) => {
         frameVideoPrompts: scriptText.match(/五[.\、]\s*首尾帧视频提示词\s*([\s\S]*?)$/)?.[1]?.trim() || ''
     };
 
+    // Extract characters
+    let peoples = [];
+    const characterBlockMatch = scriptText.match(/主要角色[：:]([\s\S]*?)(?=\n\s*(?:[^\n：:]+[：:]|[一二三四五][.、])|$)/);
+
+    if (characterBlockMatch) {
+        const blockContent = characterBlockMatch[1];
+        const lines = blockContent.split('\n').map(l => l.trim()).filter(Boolean);
+
+        lines.forEach(line => {
+             const match = line.match(/^([^\uff08\(]+)[\uff08\(]([^\uff09\)]+)[\uff09\)](?:[。.]?)$/);
+             if (match) {
+                 peoples.push({
+                     name: match[1].trim(),
+                     description: match[2].trim(),
+                     url: null,
+                     loading: false
+                 });
+             }
+        });
+    }
+
     // 2. 将每个部分的内容分割成单独的条目数组
     const imagePromptItems = sections.imagePrompts.split(/(?=\[主体\])/g).map(p => p.trim()).filter(Boolean);
     
@@ -816,7 +837,7 @@ const parseexStoryboardScript = (scriptText) => {
 
     if (sceneCount === 0) {
         console.warn("未能解析到任何图片提示词，无法生成分镜。");
-        return { story: sections.story, scenes: [] };
+        return { story: sections.story, scenes: [], peoples };
     }
 
     // 首先创建所有分镜
@@ -851,7 +872,7 @@ const parseexStoryboardScript = (scriptText) => {
         }
     });
 
-    return { story: sections.story, scenes };
+    return { story: sections.story, scenes, peoples };
 }
 
 const parseStoryboardScript = (scriptText) => {
@@ -915,9 +936,12 @@ const generateStoryboardPrompts = async () => {
   loading.value = true;
   try {
     let parsedScenes;
+    let parsedPeoples = [];
+
     if (isUnstructuredText.value) {
       const semiStructuredResult = parseexStoryboardScript(form.value.generated_story_text);
         parsedScenes = semiStructuredResult.scenes;
+        parsedPeoples = semiStructuredResult.peoples || [];
     } else {
       // Try the highly structured "分镜X" format first
       parsedScenes = parseStoryboardScript(form.value.generated_story_text);
@@ -925,6 +949,7 @@ const generateStoryboardPrompts = async () => {
       if (parsedScenes.length === 0) {
         const semiStructuredResult = parseexStoryboardScript(form.value.generated_story_text);
         parsedScenes = semiStructuredResult.scenes;
+        parsedPeoples = semiStructuredResult.peoples || [];
         if (parsedScenes.length > 0) {
           ElMessage.info('检测到“一. 二.”格式的文案，已成功解析。');
         }
@@ -952,6 +977,7 @@ const generateStoryboardPrompts = async () => {
           topic: topic,
           generated_story_text: form.value.generated_story_text, // ensure story text is also updated
           scenes: parsedScenes,
+          peoples: parsedPeoples,
           form: { ...form.value },
           createdAt: existingData.createdAt || new Date().toISOString(),
       };
