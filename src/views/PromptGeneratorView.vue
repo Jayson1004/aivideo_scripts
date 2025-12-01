@@ -819,6 +819,36 @@ const parseexStoryboardScript = (scriptText) => {
         });
     }
 
+    // Extract characters from Story section (inline definitions)
+    if (sections.story) {
+        const inlineCharRegex = /([^\uff08\(\n]{1,20})[（\(]([^\uff09\)]+)[）\)]/g;
+        let match;
+        while ((match = inlineCharRegex.exec(sections.story)) !== null) {
+            let rawName = match[1].trim();
+            const description = match[2].trim();
+            
+            // Clean up rawName: take text after the last punctuation
+            const splitName = rawName.split(/[，。！？；：,.:?]/);
+            let name = splitName[splitName.length - 1].trim();
+
+            // Heuristic: if it ends with English text, extract it
+            // This handles "儿子Timmy" -> "Timmy", "医生Goku" -> "Goku"
+            const englishMatch = name.match(/([a-zA-Z0-9\s]+)$/);
+            if (englishMatch && englishMatch[0].trim().length > 0) {
+                name = englishMatch[0].trim();
+            }
+
+            if (name && description && description.length > 2 && !peoples.find(p => p.name === name)) {
+                peoples.push({
+                    name,
+                    description,
+                    url: null,
+                    loading: false
+                });
+            }
+        }
+    }
+
     // 2. 将每个部分的内容分割成单独的条目数组
     const imagePromptItems = sections.imagePrompts.split(/(?=\[主体\])/g).map(p => p.trim()).filter(Boolean);
     
