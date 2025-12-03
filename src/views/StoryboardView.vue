@@ -53,12 +53,12 @@
             <el-option label="1024x1024(1:1)" value="1024x1024" />
           </el-select>
         </el-form-item>
-        <el-form-item label="图片风格" v-if="provider.includes('dall-e-') || provider.includes('gpt-')">
-          <el-select v-model="image_style" placeholder="选择图片风格" style="width:160px;">
+        <el-form-item label="图片类型" v-if="provider.includes('dall-e-') || provider.includes('gpt-')">
+          <el-select v-model="image_style" placeholder="选择图片类型" style="width:160px;">
             <el-option v-for="style in style_options" :key="style.value" :label="style.label" :value="style.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="图片风格" v-else>
+        <el-form-item label="图片风格">
           <el-select v-model="imageStyle" placeholder="选择图片风格" style="width:160px;">
             <el-option v-for="style in styleOptions" :key="style.value" :label="style.label" :value="style.value" />
           </el-select>
@@ -197,15 +197,19 @@
                   <p v-else>状态: {{ scene.videoStatus }}</p>
                   <el-progress :percentage="scene.videoProgress"
                     v-if="['pending', 'processing'].includes(scene.videoStatus)" :stroke-width="5" />
-                  <el-button size="small" @click="checkVideoStatus(index)" :loading="videoGenerationLoading[index]"
-                    v-if="!['failed', 'error', 'fail', 'completed', 'success'].includes(scene.videoStatus)">刷新</el-button>
-                  <el-button size="small" @click="regenerateVideoForScene(index)"
-                    :loading="videoGenerationLoading[index]"
-                    v-if="['failed', 'error', 'fail'].includes(scene.videoStatus)">重试</el-button>
                 </div>
                 <div v-else class="preview-placeholder">
-                  <el-button size="small" @click="generateVideoForScene(index)"
-                    :loading="videoGenerationLoading[index]">生成视频</el-button>
+                  <!-- No video generated yet -->
+                </div>
+                <div class="video-actions">
+                  <el-button size="small" @click="handleGenerateOrRegenerateVideo(index)"
+                    :loading="videoGenerationLoading[index]"
+                    v-if="!scene.videoId || ['failed', 'error', 'fail'].includes(scene.videoStatus) || scene.videoUrl">
+                    {{ scene.videoUrl ? '重新生成视频' : (scene.videoId ? '重试生成视频' : '生成视频') }}
+                  </el-button>
+                  <el-button size="small" @click="checkVideoStatus(index)" :loading="videoGenerationLoading[index]"
+                    v-if="scene.videoId && !['failed', 'error', 'fail', 'completed', 'success'].includes(scene.videoStatus)">刷新</el-button>
+                  <el-button size="small" type="danger" plain @click="removeVideo(index)" :disabled="!scene.videoUrl && !scene.videoId">删除视频</el-button>
                 </div>
               </div>
             </div>
@@ -378,7 +382,7 @@ const generateCharacterImage = async (person) => {
   try {
     const token = provider.value.includes('gemini-imagen') ? settings.value.geminiApiKey : settings.value.yunwuApiKey;
     const model = provider.value;
-    const imageUrl = await ImagesAPI.apicoreGenerateOne(personToUpdate.description, model, token, '1:1', imageSize.value, [], image_style.value, image_quality.value);
+    const imageUrl = await ImagesAPI.apicoreGenerateOne(personToUpdate.description + imageStyle.value, model, token, '1:1', imageSize.value, [], image_style.value, image_quality.value);
     if (imageUrl) {
       // Immediately save to backend to avoid OOM
       // Save to 'characters' subdirectory
@@ -559,7 +563,7 @@ const provider = ref('gpt-image-1-all')
 const imageSize = ref('1024x1024')
 const aspectRatio = ref('1:1')
 const imageStyle = ref('')
-const styleOptions = ref([{ label: '无风格', value: '' }, { label: '3D卡通', value: 'Cartoon Games 3D' }, { label: '索尼影片', value: 'Sony Pictures Animation' }, { label: '动漫', value: 'anime style' }, { label: '像素艺术', value: 'pixel art style' }, { label: '低多边形', value: 'low poly style' }, { label: '写实', value: 'photorealistic' }, { label: 'Roblox像素风', value: 'Roblox pixel' }])
+const styleOptions = ref([{ label: '无风格', value: '' }, { label: '3D卡通', value: 'Cartoon Games 3D' }, { label: '索尼影片', value: 'Sony Pictures Animation' }, { label: '动漫', value: ' 动漫风格 anime style' }, { label: '像素艺术', value: 'pixel art style' }, { label: '低多边形', value: 'low poly style' }, { label: '写实', value: 'photorealistic' }, { label: 'Roblox像素风', value: 'Roblox pixel' }])
 const image_style = ref('natural')
 const image_quality = ref('standard')
 const style_options = ref([{ label: '自然', value: 'natural' }, { label: '超现实和戏剧性', value: 'vivid' }])
@@ -962,12 +966,13 @@ const generateVideoForScene = async (sceneIndex) => {
   const scene = scenes.value[sceneIndex];
   videoGenerationLoading.value[sceneIndex] = true;
   try {
-    const prompt = `${scene.single_frame_video_prompt}${scene.subtitle_text}`.trim();
+    let prompt = `${scene.single_frame_video_prompt}`.trim();
     if (!prompt) {
       videoGenerationLoading.value[sceneIndex] = false;
       ElMessage.warning('请输入单帧视频提示词');
       return false;
     }
+    prompt += ` ${imageStyle.value} 语音对白：${scene.subtitle_text}`;
     scene.videoProvider = videoProvider.value;
     const providerName = scene.videoProvider.replace('-sora', '');
     const options = { model: 'sora', prompt, seconds: parseInt(videoSeconds.value, 10),
@@ -1009,13 +1014,36 @@ const generateVideoForScene = async (sceneIndex) => {
   }
 };
 
-const regenerateVideoForScene = async (sceneIndex) => {
+const removeVideo = (sceneIndex) => {
   const scene = scenes.value[sceneIndex];
+  scene.videoUrl = null;
   scene.videoId = null;
   scene.videoStatus = '';
   scene.videoProgress = 0;
-  scene.videoUrl = null;
   scene.videoErrorMessage = '';
+  scene.saveVideoUrl = null; // Clear saved URL
+  // Optionally: Also clear timer for this scene if it exists
+  if (videoPollingTimers.value[sceneIndex]) {
+    clearTimeout(videoPollingTimers.value[sceneIndex]);
+    delete videoPollingTimers.value[sceneIndex];
+  }
+};
+
+// Unified handler for generate/regenerate video
+const handleGenerateOrRegenerateVideo = async (sceneIndex) => {
+  const scene = scenes.value[sceneIndex];
+  // If there's an existing task, treat it as a retry
+  if (scene.videoId) {
+    await regenerateVideoForScene(sceneIndex);
+  } else {
+    await generateVideoForScene(sceneIndex);
+  }
+};
+
+const regenerateVideoForScene = async (sceneIndex) => {
+  // Clear all video-related states for a fresh start
+  removeVideo(sceneIndex); 
+  // Then initiate a new generation
   await generateVideoForScene(sceneIndex);
 };
 
@@ -1215,6 +1243,9 @@ const saveCurrentStory = async () => {
     };
 
     localStorage.setItem(currentStoryKey.value, JSON.stringify(dataToSave));
+    
+    // Refresh history list so the new topic appears immediately in the dialog
+    loadHistory();
     
   } catch (e) {
     console.error("Failed to save story:", e);
