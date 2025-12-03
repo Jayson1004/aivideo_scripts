@@ -315,9 +315,11 @@ function getInitialFormState() {
 }
 
 const generateStoryKey = () => {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const now = new Date();
+  // Format: YYYY-MM-DD_HH-mm-ss
+  const safeDate = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}-${now.getMinutes().toString().padStart(2,'0')}-${now.getSeconds().toString().padStart(2,'0')}`;
   const random = Math.floor(Math.random() * 100000).toString().padStart(5, '0');
-  return `story_${date}_${random}`;
+  return `story_${safeDate}_${random}`;
 };
 
 // --- LocalStorage Management ---
@@ -465,7 +467,7 @@ const generateStory = async () => {
 
                   绝对输出格式（严格遵循，不要包含任何额外对话或解释）
                   图片提示词
-                  1. [主体]角色：角色A
+                  1. [主体]角色：角色A（一位面容疲惫的40岁欧美男性，短发，穿着一件灰色旧毛衣）
                   表情：开心
                   动作：角色A坐在桌前，双手放在桌上。
                   [环境]一个现代风格的厨房，背景是橱柜和灶台。
@@ -474,7 +476,7 @@ const generateStory = async () => {
                   [视角]平视
                   [景别]中景
 
-                  2. [主体]角色：角色B
+                  2. [主体]角色：角色B（人物特征+服装描述），角色A（人物特征+服装描述）
                   表情：愤怒
                   动作：角色B站在角色A的后面，举起一只手。
                   [环境]一个现代风格的厨房，角色A坐在前景的桌子旁。
@@ -764,7 +766,11 @@ const generateStory = async () => {
 
     // Auto-save the new story
     currentStoryKey.value = generateStoryKey();
-    const topic = (form.value.topic || '').trim() || `未命名故事 ${new Date().toLocaleString()}`;
+    
+    const now = new Date();
+    const safeTopicSuffix = `${now.getFullYear()}_${(now.getMonth()+1).toString().padStart(2,'0')}_${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}_${now.getMinutes().toString().padStart(2,'0')}`;
+    const topic = (form.value.topic || '').trim() || `untitled_${safeTopicSuffix}`;
+    
     form.value.topic = topic; // Ensure topic is set in the form for later use
 
     const data = {
@@ -798,56 +804,35 @@ const parseexStoryboardScript = (scriptText) => {
         frameVideoPrompts: scriptText.match(/五[.\、]\s*首尾帧视频提示词\s*([\s\S]*?)$/)?.[1]?.trim() || ''
     };
 
-    // Extract characters
+    // Extract characters from the image prompts section, prioritizing [主体]角色：
     let peoples = [];
-    const characterBlockMatch = scriptText.match(/主要角色[：:]([\s\S]*?)(?=\n\s*(?:[^\n：:]+[：:]|[一二三四五][.、])|$)/);
+    const characterMap = new Map(); // Use a map to avoid duplicates based on name
 
-    if (characterBlockMatch) {
-        const blockContent = characterBlockMatch[1];
-        const lines = blockContent.split('\n').map(l => l.trim()).filter(Boolean);
+    // Look specifically in the imagePrompts section as this is where character definitions are expected.
+    // The imagePrompts section contains items like "2. [主体]角色：角色B（人物特征+服装描述），角色A（人物特征+服装描述）"
+    if (sections.imagePrompts) {
+        // Split imagePrompts into individual prompt lines, then process each.
+        // The split needs to handle "1." "2." or any numbering.
+        const promptLines = sections.imagePrompts.split(/\d+\.\s*/).filter(Boolean).map(line => line.trim());
 
-        lines.forEach(line => {
-             const match = line.match(/^([^\uff08\(]+)[\uff08\(]([^\uff09\)]+)[\uff09\)](?:[。.]?)$/);
-             if (match) {
-                 peoples.push({
-                     name: match[1].trim(),
-                     description: match[2].trim(),
-                     url: null,
-                     loading: false
-                 });
-             }
-        });
-    }
-
-    // Extract characters from Story section (inline definitions)
-    if (sections.story) {
-        const inlineCharRegex = /([^\uff08\(\n]{1,20})[（\(]([^\uff09\)]+)[）\)]/g;
-        let match;
-        while ((match = inlineCharRegex.exec(sections.story)) !== null) {
-            let rawName = match[1].trim();
-            const description = match[2].trim();
-            
-            // Clean up rawName: take text after the last punctuation
-            const splitName = rawName.split(/[，。！？；：,.:?]/);
-            let name = splitName[splitName.length - 1].trim();
-
-            // Heuristic: if it ends with English text, extract it
-            // This handles "儿子Timmy" -> "Timmy", "医生Goku" -> "Goku"
-            const englishMatch = name.match(/([a-zA-Z0-9\s]+)$/);
-            if (englishMatch && englishMatch[0].trim().length > 0) {
-                name = englishMatch[0].trim();
-            }
-
-            if (name && description && description.length > 2 && !peoples.find(p => p.name === name)) {
-                peoples.push({
-                    name,
-                    description,
-                    url: null,
-                    loading: false
-                });
+        for (const line of promptLines) {
+            // Updated regex to handle multiline content correctly using [\s\S]*?
+            const blockMatch = line.match(/\[主体\]角色：([\s\S]*?)(?=\[|$)/); // Similar to StoryboardView.vue
+            if (blockMatch) {
+                const content = blockMatch[1];
+                const regex = /([\u4e00-\u9fa5a-zA-Z0-9]+)[(（](.*?)[)）]/g;
+                let match;
+                while ((match = regex.exec(content)) !== null) {
+                    const name = match[1].trim().replace(/和|\*/g, '');
+                    const description = match[2].trim();
+                    if (name && !characterMap.has(name)) {
+                        characterMap.set(name, { name, description, url: null, loading: false });
+                    }
+                }
             }
         }
     }
+    peoples = Array.from(characterMap.values());
 
     // 2. 将每个部分的内容分割成单独的条目数组
     const imagePromptItems = sections.imagePrompts.split(/(?=\[主体\])/g).map(p => p.trim()).filter(Boolean);
@@ -998,7 +983,9 @@ const generateStoryboardPrompts = async () => {
       }
 
       // Always update the record, whether it's new or existing
-      const topic = (form.value.topic || '').trim() || `未命名故事 ${new Date().toLocaleString()}`;
+      const now = new Date();
+      const safeTopicSuffix = `${now.getFullYear()}_${(now.getMonth()+1).toString().padStart(2,'0')}_${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}_${now.getMinutes().toString().padStart(2,'0')}`;
+      const topic = (form.value.topic || '').trim() || `untitled_${safeTopicSuffix}`;
       form.value.topic = topic; // Update form state
 
       const existingData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');

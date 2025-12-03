@@ -15,6 +15,7 @@ export const API_BASE = localApi.defaults.baseURL;
 // --- Helper function for decoding data URLs ---
 function data_url_to_bytes(data_url) {
   const [header, encoded] = data_url.split(',', 2);
+  if (!header || !encoded) throw new Error("Invalid Data URL format");
   const mime_type = header.split(';')[0].split(':')[1];
   const data = atob(encoded); // Use atob for base64 decoding in browser
   const bytes = new Uint8Array(data.length);
@@ -22,6 +23,22 @@ function data_url_to_bytes(data_url) {
     bytes[i] = data.charCodeAt(i);
   }
   return { mime_type, bytes };
+}
+
+async function getBlobFromUrl(url) {
+  if (url.startsWith('data:')) {
+      const { mime_type, bytes } = data_url_to_bytes(url);
+      return new Blob([bytes], { type: mime_type });
+  } else {
+      try {
+        // Fetch the image from the HTTP URL
+        const response = await axios.get(url, { responseType: 'blob' });
+        return response.data;
+      } catch (e) {
+        console.error(`Failed to fetch image from URL: ${url}`, e);
+        throw e;
+      }
+  }
 }
 
 
@@ -42,11 +59,18 @@ export const ImagesAPI = {
         // Image Editing with GPT model
         const formData = new FormData();
         let basePrompt = '请对应参考参数image里的图片：';
-        baseimgs.forEach((img, i) => {
+        
+        // Use Promise.all to handle potential async fetches for HTTP URLs
+        await Promise.all(baseimgs.map(async (img, i) => {
             basePrompt += `图${i + 1} (${img.name}), `;
-            const { mime_type, bytes } = data_url_to_bytes(img.url);
-            formData.append('image', new Blob([bytes], { type: mime_type }), `image_${i+1}.png`);
-        });
+            try {
+                const blob = await getBlobFromUrl(img.url);
+                formData.append('image', blob, `image_${i+1}.png`);
+            } catch (e) {
+                console.error(`Failed to load base image ${img.name}:`, e);
+                throw new Error(`Failed to load base image ${img.name}`);
+            }
+        }));
         
         formData.append('prompt', `${basePrompt}帮我根据描述生成新的一张图: ${prompt}`);
         formData.append('model', model);
@@ -103,11 +127,26 @@ export const ImagesAPI = {
         let basePrompt = '请对应参考以下图片：';
         baseimgs.forEach((img, i) => { basePrompt += `图${i + 1} (${img.name}), ` });
         
-        const imageParts = baseimgs.map(img => {
-            const [, encoded] = img.url.split(',', 2);
-            const mime_type = img.url.split(';')[0].split(':')[1];
-            return { inline_data: { mime_type, data: encoded }};
-        });
+        const imageParts = await Promise.all(baseimgs.map(async (img) => {
+            let mime_type, data_str;
+            if (img.url.startsWith('data:')) {
+                const parts = img.url.split(',', 2);
+                mime_type = parts[0].split(';')[0].split(':')[1];
+                data_str = parts[1];
+            } else {
+                // Fetch and convert to base64 for Gemini inline_data
+                const response = await axios.get(img.url, { responseType: 'arraybuffer' });
+                const bytes = new Uint8Array(response.data);
+                let binary = '';
+                for (let i = 0; i < bytes.byteLength; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+                data_str = btoa(binary);
+                mime_type = response.headers['content-type'] || 'image/png'; // guess or get from headers
+            }
+            return { inline_data: { mime_type, data: data_str }};
+        }));
+
         payload.contents[0].parts = [{"text": `${basePrompt}帮我根据描述生成新的一张图: ${prompt}`}, ...imageParts];
       }
 
@@ -184,8 +223,16 @@ export const VideosAPI = {
         url = '/proxy/yunwu/v1/videos';
         // Yunwu expects form-data for this endpoint
         const formData = new FormData();
-        const { mime_type, bytes } = data_url_to_bytes(options.image_url);
-        formData.append('input_reference', new Blob([bytes], { type: mime_type }));
+        
+        try {
+            const blob = await getBlobFromUrl(options.image_url);
+            // We need a filename for the form data, even if dummy
+            formData.append('input_reference', blob, 'reference_image.png');
+        } catch (e) {
+            console.error("Failed to process image for video generation:", e);
+            throw new Error("Failed to load reference image for video generation.");
+        }
+
         formData.append('model', 'sora-2');
         formData.append('prompt', options.prompt);
         formData.append('seconds', options.seconds);

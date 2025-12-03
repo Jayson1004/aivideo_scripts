@@ -135,7 +135,8 @@
           accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" />
         <el-button @click="handleImportClick">从Excel导入</el-button>
         <el-button @click="clearAll">清空所有</el-button>
-        <el-button type="primary" :loading="isBatchGenerating" :disabled="!selectedScenes.length" @click="generateAllImages">批量生成选中图片</el-button>
+        <el-button type="primary" :loading="isBatchGenerating" :disabled="selectedScenes.size === 0" @click="generateAllImages">批量生成选中图片</el-button>
+        <el-button type="primary" :loading="isBatchVideoGenerating" :disabled="selectedScenes.size === 0" @click="generateAllVideos">批量生成选中视频</el-button>
         <el-button type="success" @click="openGlobalModificationDialog">智能修改所有分镜</el-button>
         <el-button @click="sendToExtension">发送到即梦插件</el-button>
       </div>
@@ -164,7 +165,17 @@
               <div class="image-preview-wrapper">
                 <img v-if="scene.image_url" :src="scene.image_url" class="preview-image"
                   @click="previewImage({ url: scene.image_url }, index)" />
-                <div v-else class="preview-placeholder">暂无图片</div>
+                <el-upload
+                  v-else
+                  action="#"
+                  accept=".jpg,.jpeg,.png,.webp"
+                  :show-file-list="false"
+                  :auto-upload="false"
+                  :on-change="(file) => handleSceneImageChange(file, index)"
+                  class="scene-uploader"
+                >
+                  <el-icon><Plus /></el-icon>
+                </el-upload>
                 <div class="image-actions">
                   <el-button size="small" @click="generateImageForScene(index)"
                     :loading="imageLoading[index]">生成图片</el-button>
@@ -274,7 +285,7 @@
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ImagesAPI, FileAPI, VideosAPI, PromptAPI } from '../services/api'
+import { ImagesAPI, FileAPI, VideosAPI, PromptAPI, API_BASE } from '../services/api'
 import { Delete, Plus, ZoomIn, Edit, FullScreen } from '@element-plus/icons-vue'
 import { useSettings } from '../composables/useSettings'
 import * as XLSX from 'xlsx';
@@ -318,18 +329,21 @@ const updatePeoplesFromScenes = (scenesToParse) => {
     });
   }
 
-  // Regex to handle both "Name(Description)" and "角色：Name(Description)"
-  // The name part `([\u4e00-\u9fa5a-zA-Z0-9]+?)` ensures it's a continuous sequence of allowed characters.
-  const regex = /(?:角色：)?([\u4e00-\u9fa5a-zA-Z0-9]+?)[(（](.*?)[)）]/g;
-
   for (const scene of scenesToParse) {
     if (scene.image_prompt) {
-      let match;
-      while ((match = regex.exec(scene.image_prompt)) !== null) {
-        const name = match[1].trim().replace(/和|\*/g, '');;
-        const description = match[2].trim();
-        if (name && !characterMap.has(name)) {
-          characterMap.set(name, { name, description, url: null, loading: false });
+      // Updated regex to handle multiline content correctly using [\s\S]*?
+      // Matches "[主体]角色：" followed by any content until the next "[" or end of string.
+      const blockMatch = scene.image_prompt.match(/\[主体\]角色：([\s\S]*?)(?=\[|$)/);
+      if (blockMatch) {
+        const content = blockMatch[1];
+        const regex = /([\u4e00-\u9fa5a-zA-Z0-9]+)[(（](.*?)[)）]/g;
+        let match;
+        while ((match = regex.exec(content)) !== null) {
+          const name = match[1].trim().replace(/和|\*/g, '');
+          const description = match[2].trim();
+          if (name && !characterMap.has(name)) {
+            characterMap.set(name, { name, description, url: null, loading: false });
+          }
         }
       }
     }
@@ -366,12 +380,28 @@ const generateCharacterImage = async (person) => {
     const model = provider.value;
     const imageUrl = await ImagesAPI.apicoreGenerateOne(personToUpdate.description, model, token, '1:1', imageSize.value, [], image_style.value, image_quality.value);
     if (imageUrl) {
-      personToUpdate.url = imageUrl;
-      person.url = imageUrl
-      // const response = await FileAPI.saveImage(storyTheme.value, `${storyTheme.value}.png`, imageUrl);
-      // if (response && response.url) {
-      //   person.saveImgUrl = response.url; // Replace Base64 with new URL on the copy
-      // }
+      // Immediately save to backend to avoid OOM
+      // Save to 'characters' subdirectory
+      const filename = `characters/character_${person.name.replace(/\s+/g, '_')}_${Date.now()}.png`;
+      try {
+        const saveResponse = await FileAPI.saveImage(storyTheme.value, filename, imageUrl);
+        if (saveResponse && saveResponse.web_url) {
+           // Use the backend URL (prepend base URL if necessary, assuming relative here)
+           const backendUrl = `${API_BASE}${saveResponse.web_url}`;
+           personToUpdate.url = backendUrl;
+           person.url = backendUrl;
+        } else {
+           // Fallback if save fails (not recommended for memory)
+           personToUpdate.url = imageUrl;
+           person.url = imageUrl;
+        }
+      } catch (saveError) {
+        console.error("Failed to save character image to backend:", saveError);
+        // Fallback
+        personToUpdate.url = imageUrl;
+        person.url = imageUrl;
+      }
+      
       ElMessage.success(`角色 ${person.name} 图片生成成功`);
     }
   } catch (e) {
@@ -379,6 +409,16 @@ const generateCharacterImage = async (person) => {
     ElMessage.error(`角色 ${person.name} 图片生成失败: ${e.message}`);
   } finally {
     personToUpdate.loading = false;
+  }
+};
+
+const handleSceneImageChange = (file, sceneIndex) => {
+  if (file.raw) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      scenes.value[sceneIndex].image_url = e.target.result;
+    };
+    reader.readAsDataURL(file.raw);
   }
 };
 
@@ -449,20 +489,27 @@ const handleFileSelected = (event) => {
       }
 
       if (newScenes.length > 0) {
-        const newTopic = `导入脚本 ${new Date().toLocaleString()}`;
+        const now = new Date();
+        const safeDateStr = `${now.getFullYear()}-${(now.getMonth()+1).toString().padStart(2,'0')}-${now.getDate().toString().padStart(2,'0')}_${now.getHours().toString().padStart(2,'0')}-${now.getMinutes().toString().padStart(2,'0')}`;
+        const newTopic = `导入脚本_${safeDateStr}`;
         const newKey = generateStoryKey();
 
         // Derive peoples from the newly parsed scenes before saving
         const characterMap = new Map();
-        const regex = /(?:角色：)?([\u4e00-\u9fa5a-zA-Z0-9]+?)[(（](.*?)[)）]/g;
         for (const scene of newScenes) {
             if (scene.image_prompt) {
-                let match;
-                while ((match = regex.exec(scene.image_prompt)) !== null) {
-                    const name = match[1].trim().replace(/和|\*/g, '');
-                    const description = match[2].trim();
-                    if (name && !characterMap.has(name)) {
-                        characterMap.set(name, { name, description, url: null, loading: false });
+                // Updated regex to handle multiline content correctly using [\s\S]*?
+                const blockMatch = scene.image_prompt.match(/\[主体\]角色：([\s\S]*?)(?=\[|$)/);
+                if (blockMatch) {
+                    const content = blockMatch[1];
+                    const regex = /([\u4e00-\u9fa5a-zA-Z0-9]+)[(（](.*?)[)）]/g;
+                    let match;
+                    while ((match = regex.exec(content)) !== null) {
+                        const name = match[1].trim().replace(/和|\*/g, '');
+                        const description = match[2].trim();
+                        if (name && !characterMap.has(name)) {
+                            characterMap.set(name, { name, description, url: null, loading: false });
+                        }
                     }
                 }
             }
@@ -730,11 +777,11 @@ const loadStory = (key, closeDialog = true, isFromGenerator = false) => {
   if (data.scenes && Array.isArray(data.scenes)) {
     scenes.value = data.scenes.map(s => createNewScene(s));
 
-    if (data.peoples && data.peoples.length > 0) {
-        peoples.value = data.peoples;
-    } else {
+    // if (data.peoples && data.peoples.length > 0) {
+    //     peoples.value = data.peoples;
+    // } else {
         updatePeoplesFromScenes(scenes.value);
-    }
+    // }
 
     if (isFromGenerator) {
       storyTheme.value = localStorage.getItem('script_topic') || data.topic || '';
@@ -774,13 +821,24 @@ const generateImageForScene = async (sceneIndex) => {
     let imageUrl = await ImagesAPI.apicoreGenerateOne(finalPrompt, model, token, aspectRatio.value, imageSize.value, referenceImages, image_style.value, image_quality.value);
 
     if (imageUrl) {
-      scenes.value[sceneIndex].image_url = imageUrl;
       scenes.value[sceneIndex].generationDetails = { provider: model, size: imageSize.value, style: image_style.value, quality: image_quality.value };
-      ElMessage.success(`分镜 ${sceneIndex + 1} 图片生成成功`);
-      const response = await FileAPI.saveImage(storyTheme.value, `${storyTheme.value}_scene_${sceneIndex + 1}_${Date.now()}.png`, imageUrl);
-      if (response && response.path) {
-        scenes.value[sceneIndex].saveImgUrl = response.path; // Replace Base64 with new URL on the copy
+      
+      // Immediately save to backend
+      const filename = `${storyTheme.value}_scene_${sceneIndex + 1}_${Date.now()}.png`;
+      try {
+        const saveResponse = await FileAPI.saveImage(storyTheme.value, filename, imageUrl);
+        if (saveResponse && saveResponse.web_url) {
+           scenes.value[sceneIndex].image_url = `${API_BASE}${saveResponse.web_url}`;
+           scenes.value[sceneIndex].saveImgUrl = saveResponse.path;
+        } else {
+           scenes.value[sceneIndex].image_url = imageUrl;
+        }
+      } catch (saveError) {
+         console.error("Failed to save scene image:", saveError);
+         scenes.value[sceneIndex].image_url = imageUrl;
       }
+
+      ElMessage.success(`分镜 ${sceneIndex + 1} 图片生成成功`);
       return true;
     }
   } catch (e) {
@@ -799,27 +857,116 @@ const generateAllImages = async () => {
   if (selectedScenes.value.size === 0) return ElMessage.warning('请至少选择一个分镜来生成图片。');
   isBatchGenerating.value = true;
   const scenesToGenerate = Array.from(selectedScenes.value);
-  ElMessage.info(`开始为选中的 ${scenesToGenerate.length} 个分镜批量生成图片...`);
-  const batchSize = 6;
+  
+  // Reduced batch size to avoid 429 Rate Limit errors from external providers
+  const batchSize = 3; 
+  ElMessage.info(`开始为选中的 ${scenesToGenerate.length} 个分镜批量生成图片 (并发数: ${batchSize})...`);
+  
   let failedSceneIndexes = [];
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
   for (let i = 0; i < scenesToGenerate.length; i += batchSize) {
     const batchIndexes = scenesToGenerate.slice(i, i + batchSize);
-    const promises = batchIndexes.map(index => generateImageForScene(index).then(success => ({ success, index })));
+    
+    // Process batch
+    const promises = batchIndexes.map(async (index) => {
+        // Skip if image already exists (prevent duplicate generation cost)
+        if (scenes.value[index].image_url) {
+            console.log(`Skipping scene ${index + 1} as it already has an image.`);
+            return { success: true, index, skipped: true };
+        }
+        const success = await generateImageForScene(index);
+        return { success, index };
+    });
+
     const results = await Promise.all(promises);
-    results.forEach(res => { if (!res.success) failedSceneIndexes.push(res.index) });
+    
+    results.forEach(res => { 
+        if (!res.success) failedSceneIndexes.push(res.index);
+    });
+
+    // Add a small delay between batches to respect API rate limits, unless it's the last batch
+    if (i + batchSize < scenesToGenerate.length) {
+      await sleep(1500); 
+    }
   }
-  if (failedSceneIndexes.length > 0) ElMessage.error(`${failedSceneIndexes.length} 张图片生成失败。`);
-  else ElMessage.success('所有选中分镜的图片已生成完毕。');
+
+  if (failedSceneIndexes.length > 0) {
+    ElMessage.error(`${failedSceneIndexes.length} 张图片生成失败。如果是大面积失败，请检查API余额或稍后再试（可能触发了限流）。`);
+  } else {
+    ElMessage.success('所有选中分镜的图片已生成完毕。');
+  }
   isBatchGenerating.value = false;
 };
+const isBatchVideoGenerating = ref(false);
+
+const generateAllVideos = async () => {
+  if (selectedScenes.value.size === 0) return ElMessage.warning('请至少选择一个分镜来生成视频。');
+  isBatchVideoGenerating.value = true;
+  const scenesToGenerate = Array.from(selectedScenes.value);
+  
+  // Video generation is heavy. We use a batch size of 1 (serial) to ensure stability and avoid rate limits.
+  const batchSize = 1; 
+  ElMessage.info(`开始为选中的 ${scenesToGenerate.length} 个分镜批量生成视频 (串行处理)...`);
+  
+  let failedSceneIndexes = [];
+  let skippedCount = 0;
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  for (let i = 0; i < scenesToGenerate.length; i += batchSize) {
+    const batchIndexes = scenesToGenerate.slice(i, i + batchSize);
+    
+    const promises = batchIndexes.map(async (index) => {
+        const scene = scenes.value[index];
+        
+        // Skip if video already exists or task is running
+        if (scene.videoUrl || scene.videoId) {
+            console.log(`Skipping scene ${index + 1} (Video exists or processing).`);
+            skippedCount++;
+            return { success: true, index, skipped: true };
+        }
+        
+        // Skip if no base image (Image-to-Video workflow)
+        if (!scene.image_url) {
+             console.warn(`Skipping scene ${index + 1} (No image source).`);
+             ElMessage.warning(`分镜 ${index+1} 没有图片，跳过视频生成。`);
+             failedSceneIndexes.push(index);
+             return { success: false, index, skipped: true };
+        }
+
+        const success = await generateVideoForScene(index);
+        return { success, index };
+    });
+
+    const results = await Promise.all(promises);
+    
+    results.forEach(res => { 
+        if (!res.success && !res.skipped) failedSceneIndexes.push(res.index);
+    });
+
+    // Add delay between batches (videos need more breathing room than images)
+    if (i + batchSize < scenesToGenerate.length) {
+      await sleep(3000); 
+    }
+  }
+
+  if (failedSceneIndexes.length > 0) {
+    ElMessage.error(`${failedSceneIndexes.length} 个视频生成任务创建失败。`);
+  } else {
+    ElMessage.success(`批量任务完成。${skippedCount} 个已跳过。请等待后台处理完成。`);
+  }
+  isBatchVideoGenerating.value = false;
+};
+
 const generateVideoForScene = async (sceneIndex) => {
   const scene = scenes.value[sceneIndex];
   videoGenerationLoading.value[sceneIndex] = true;
   try {
-    const prompt = `${scene.single_frame_video_prompt}`.trim();
+    const prompt = `${scene.single_frame_video_prompt}${scene.subtitle_text}`.trim();
     if (!prompt) {
       videoGenerationLoading.value[sceneIndex] = false;
-      return ElMessage.warning('请输入单帧视频提示词');
+      ElMessage.warning('请输入单帧视频提示词');
+      return false;
     }
     scene.videoProvider = videoProvider.value;
     const providerName = scene.videoProvider.replace('-sora', '');
@@ -853,10 +1000,12 @@ const generateVideoForScene = async (sceneIndex) => {
     }
     ElMessage.success(`分镜 ${sceneIndex + 1} 视频生成任务已创建`);
     checkVideoStatus(sceneIndex, true);
+    return true;
   } catch (e) {
     console.error(e);
     ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${e.message}`);
     videoGenerationLoading.value[sceneIndex] = false;
+    return false;
   }
 };
 
@@ -901,9 +1050,16 @@ const checkVideoStatus = async (sceneIndex, isPolling = false) => {
     if (isDone) {
       if (scene.videoUrl) {
         ElMessage.success(`分镜 ${sceneIndex + 1} 视频已生成`);
-        const response = await FileAPI.saveImage(storyTheme.value, `${storyTheme.value}_scene_${sceneIndex + 1}_video.mp4`, scene.videoUrl);
-        if (response && response.path) {
-          scene.saveVideoUrl = response.path; // Replace Base64 with new URL on the copy
+        // Save video to backend
+        try {
+            const filename = `${storyTheme.value}_scene_${sceneIndex + 1}_video_${Date.now()}.mp4`;
+            const response = await FileAPI.saveImage(storyTheme.value, filename, scene.videoUrl);
+            if (response && response.web_url) {
+              scene.videoUrl = `${API_BASE}${response.web_url}`;
+              scene.saveVideoUrl = response.path;
+            }
+        } catch (saveError) {
+            console.error("Failed to save video:", saveError);
         }
       } else {
         ElMessage.error(`分镜 ${sceneIndex + 1} 视频生成失败: ${scene.videoErrorMessage}`);
@@ -1035,26 +1191,17 @@ const saveCurrentStory = async () => {
     const peoplesToSave = JSON.parse(JSON.stringify(peoples.value));
 
     // --- Upload Logic ---
+    // REMOVED per requirement: "Uploaded ones should not be saved again".
+    // Generated images are now saved immediately upon generation.
+    // User-uploaded images (local files) are kept as Base64 in memory/localStorage 
+    // (or you can enable saving them if needed, but for now we skip auto-upload).
+    /*
     for (const person of peoplesToSave) {
         if (person.url && person.url.startsWith('data:image')) {
-            try {
-                const filename = `character_${person.name.replace(/\s+/g, '_')}_${Date.now()}.png`;
-                const response = await FileAPI.saveImage(storyTheme.value, filename, person.url);
-                if (response && response.path) {
-                    person.url = response.path; // Replace Base64 with new URL on the copy
-                }
-            } catch (e) { person.url = '', console.error(`Failed to upload image for ${person.name}:`, e); }
+            // ...
         }
     }
-    // You can add similar logic for scene.image_url or scene.videoUrl here if they can be Base64
-    for (const scene of scenesToSave) {
-        if (scene.image_url && scene.image_url.startsWith('data:image')) {
-          scene.image_url = scene.saveImgUrl
-        }
-        // if (scene.image_url && scene.image_url.startsWith('data:image')) {
-        //   scene.image_url = scene.saveImgUrl
-        // }
-    }
+    */
     // --- End Upload Logic ---
 
     const storyData = JSON.parse(localStorage.getItem(currentStoryKey.value) || '{}');
@@ -1225,6 +1372,15 @@ watch(showModificationDialog, (newVal) => {
 .character-uploader {
   width: 100%;
   height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #dcdfe6;
+  border-radius: 4px;
+}
+.scene-uploader {
+  width: 100%;
+  height: 120px; /* Adjusted height to fit better with existing layout */
   display: flex;
   align-items: center;
   justify-content: center;

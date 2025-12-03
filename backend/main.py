@@ -4,6 +4,7 @@ import httpx
 import aiofiles
 from fastapi import FastAPI, HTTPException, Body, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import PlainTextResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
@@ -38,6 +39,8 @@ class Settings(BaseSettings):
         env_file = ".env"
 
 settings = Settings()
+# Ensure the save directory exists
+os.makedirs(settings.storyboard_save_path, exist_ok=True)
 
 # --- Pydantic Models for Request Body ---
 class Part(BaseModel):
@@ -80,6 +83,10 @@ class BookwormRequest(BaseModel):
 # --- FastAPI Application ---
 app = FastAPI()
 
+# --- Static Files ---
+# Mount the 'storyboards' directory to be served at '/storyboards'
+app.mount("/storyboards", StaticFiles(directory=settings.storyboard_save_path), name="storyboards")
+
 # --- Middleware ---
 
 # CORS Middleware
@@ -87,7 +94,7 @@ app = FastAPI()
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://172.30.218.241:5173", # From user's error log
+    "*" # Allow all for development convenience
 ]
 
 app.add_middleware(
@@ -592,6 +599,17 @@ class SaveImageRequest(BaseModel):
     image_data: str = Field(..., description="The Base64-encoded data URL of the image.")
 
 
+import re
+
+def sanitize_filename(filename: str) -> str:
+    """
+    Sanitizes a filename by replacing invalid characters with underscores.
+    Allowed characters: alphanumeric, hyphen, underscore, dot, chinese characters.
+    """
+    # Replace common invalid characters (windows/linux/mac restrictions)
+    # : / \ ? * " < > |
+    return re.sub(r'[\\/:*?"<>|]', '_', filename)
+
 # --- File Saving Endpoints ---
 
 @app.post("/api/save-text")
@@ -600,9 +618,12 @@ async def save_text_file(request: SaveTextRequest):
     Saves text content to a file in a specified topic directory.
     """
     try:
-        save_dir = os.path.join(settings.storyboard_save_path, request.topic)
+        safe_topic = sanitize_filename(request.topic)
+        safe_filename = sanitize_filename(request.filename)
+        
+        save_dir = os.path.join(settings.storyboard_save_path, safe_topic)
         os.makedirs(save_dir, exist_ok=True)
-        file_path = os.path.join(save_dir, request.filename)
+        file_path = os.path.join(save_dir, safe_filename)
 
         async with aiofiles.open(file_path, mode='w', encoding='utf-8') as f:
             await f.write(request.content)
@@ -617,14 +638,50 @@ async def save_image_file(request: SaveImageRequest):
     Saves an image/video from a data URL or a network URL to a file.
     """
     try:
-        save_dir = os.path.join(settings.storyboard_save_path, request.topic)
-        os.makedirs(save_dir, exist_ok=True)
-        file_path = os.path.join(save_dir, request.filename)
+        # Sanitize inputs to prevent invalid paths
+        safe_topic = sanitize_filename(request.topic)
+        # Filename might contain directory separators if we want subdirs (e.g. characters/foo.png)
+        # But we should be careful. For now, let's allow / in filename but sanitize the parts?
+        # Actually, request.filename coming from frontend might be "characters/foo.png".
+        # We should handle that.
+        
+        # Split by forward slash to handle subdirectories provided by frontend
+        parts = request.filename.split('/')
+        safe_parts = [sanitize_filename(p) for p in parts]
+        safe_filename = os.path.join(*safe_parts)
+        
+        # Base directory for the topic
+        topic_dir = os.path.join(settings.storyboard_save_path, safe_topic)
+        
+        # Full file path
+        file_path = os.path.join(topic_dir, safe_filename)
+        
+        # Ensure the directory for the specific file exists (handles subdirectories like 'characters/')
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
 
         data_to_write = b""
 
         # Check if image_data is a URL
         if request.image_data.startswith(('http://', 'https://')):
+            # Anti-duplicate save mechanism:
+            if '/storyboards/' in request.image_data:
+                try:
+                    url_part = request.image_data.split('/storyboards/', 1)[1]
+                    # Decode URL encoding
+                    from urllib.parse import unquote
+                    decoded_url_part = unquote(url_part)
+                    
+                    # Construct potential local path based on the URL structure
+                    # Note: The URL structure mirrors the file structure.
+                    potential_path = os.path.join(settings.storyboard_save_path, decoded_url_part.replace('/', os.sep))
+                    
+                    if os.path.exists(potential_path):
+                         # Web URL should correspond to the sanitized path we use for storage
+                        web_url = f"/storyboards/{safe_topic}/{safe_filename.replace(os.sep, '/')}"
+                        return {"message": "File already exists, skipped save.", "path": potential_path, "web_url": web_url}
+                except Exception as e:
+                    print(f"Self-hosted check failed: {e}")
+
             async with httpx.AsyncClient() as client:
                 try:
                     response = await client.get(request.image_data, follow_redirects=True)
@@ -640,12 +697,20 @@ async def save_image_file(request: SaveImageRequest):
                 header, encoded = request.image_data.split(',', 1)
                 data_to_write = base64.b64decode(encoded)
             except Exception:
-                raise HTTPException(status_code=400, detail="Invalid data URL format.")
+                try:
+                    data_to_write = base64.b64decode(request.image_data)
+                except:
+                    raise HTTPException(status_code=400, detail="Invalid data URL format.")
 
         async with aiofiles.open(file_path, mode='wb') as f:
             await f.write(data_to_write)
+        
+        # Return the sanitized web URL
+        # Ensure forward slashes for URL
+        web_url_path = f"{safe_topic}/{safe_filename.replace(os.sep, '/')}"
+        web_url = f"/storyboards/{web_url_path}"
 
-        return {"message": "File saved successfully.", "path": file_path}
+        return {"message": "File saved successfully.", "path": file_path, "web_url": web_url}
     except Exception as e:
         # Catch-all for other potential errors like file system issues
         if isinstance(e, HTTPException):
