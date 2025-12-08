@@ -223,16 +223,16 @@ export const VideosAPI = {
         url = '/proxy/yunwu/v1/videos';
         // Yunwu expects form-data for this endpoint
         const formData = new FormData();
-        
-        try {
-            const blob = await getBlobFromUrl(options.image_url);
-            // We need a filename for the form data, even if dummy
-            formData.append('input_reference', blob, 'reference_image.png');
-        } catch (e) {
-            console.error("Failed to process image for video generation:", e);
-            throw new Error("Failed to load reference image for video generation.");
+        if (options.image_url) {
+            try {
+                const blob = await getBlobFromUrl(options.image_url);
+                formData.append('input_reference', blob, 'reference_image.png');
+            } catch (e) {
+                console.error("Failed to process image for video generation:", e);
+                throw new Error("Failed to load reference image for video generation.");
+            }
         }
-
+        // sora-2-pro
         formData.append('model', 'sora-2');
         formData.append('prompt', options.prompt);
         formData.append('seconds', options.seconds);
@@ -255,6 +255,16 @@ export const VideosAPI = {
             },
         };
         headers['Content-Type'] = 'application/json';
+        if(options.image_url) {
+          payload.model = 'sora-2-image-to-video';
+          try {
+            const blob = await getBlobFromUrl(options.image_url);
+            payload.input.image_urls = [`data:${blob.type};base64,${blob.toString('base64')}`];
+          } catch (e) {
+            console.error("Failed to process image for video generation:", e);
+            throw new Error("Failed to load reference image for video generation.");
+          } 
+        }
     } else {
         throw new Error(`Unsupported video provider: ${provider}`);
     }

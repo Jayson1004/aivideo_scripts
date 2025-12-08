@@ -34,11 +34,7 @@
         <el-form-item label="模型选择" v-if="form.generate_story_type !== '3'">
           <el-select v-model="form.model" placeholder="选择语言模型" style="width: 100%;">
             <el-option-group label="OpenAI">
-              <el-option label="GPT-5 (2025-08-07)" value="gpt-5-2025-08-07"></el-option>
               <el-option label="GPT-5.1" value="gpt-5.1"></el-option>
-
-              
-              <el-option label="GPT-4" value="gpt-4"></el-option>
             </el-option-group>
             <el-option-group label="Claude">
               <el-option label="Claude Sonnet 4.5 (Thinking)" value="claude-sonnet-4-5-20250929-thinking"></el-option>
@@ -46,6 +42,9 @@
               <el-option label="Claude Opus 4.1" value="claude-opus-4-1-20250805"></el-option>
             </el-option-group>
             <!-- gemini-3-pro-preview-thinking -->
+             <el-option-group label="Gemini">
+              <el-option label="Gemini 3 Pro" value="gemini-3-pro-preview"></el-option>
+             </el-option-group>
           </el-select>
         </el-form-item>
        
@@ -191,12 +190,12 @@
         <el-form-item>
           <el-switch v-model="isUnstructuredText" active-text="非分镜结构文本" />
         </el-form-item>
-        <!-- <el-form-item label="生成语言">
+        <el-form-item label="生成语言">
           <el-radio-group v-model="form.language">
             <el-radio label="chinese">中文</el-radio>
             <el-radio label="english">English</el-radio>
           </el-radio-group>
-        </el-form-item> -->
+        </el-form-item>
         <!-- <el-form-item label="视频风格">
           <el-select v-model="form.style" placeholder="选择视频风格" style="width:160px;">
             <el-option v-for="style in styleOptions" :key="style.value" :label="style.label" :value="style.value" />
@@ -547,13 +546,13 @@ const generateStory = async () => {
           图片提示词：[详细的图片生成提示词]
           单帧视频提示词：[基于单张图片的动态视频提示词]
           首尾帧视频提示词：[从当前图片到下一个图片的动态过渡过程]
-          字幕：[英文对白或旁白]
+          字幕：[${form.value.language === 'chinese' ? '中文对白或旁白' : '英文对白或旁白'}]
 
           分镜2
           图片提示词：[详细的图片生成提示词]
           单帧视频提示词：[基于单张图片的动态视频提示词]
           首尾帧视频提示词：[从当前图片到下一个图片的动态过渡过程]
-          字幕：[英文对白或旁白]
+          字幕：[${form.value.language === 'chinese' ? '中文对白或旁白' : '英文对白或旁白'}]
 
           重要格式规则：
           1. 分镜标题必须是"分镜1"、"分镜2"、"分镜3"等格式
@@ -638,8 +637,8 @@ const generateStory = async () => {
           分镜内容：用中文描述这个分镜的场景和动作
           图片提示词：[镜头类型]，[光线条件]，[时间]，在[场景描述]，背景是[背景细节描述]。
 
-          [主体]角色：角色A（一位面容疲惫的40岁欧美男性，短发，穿着一件灰色旧毛衣），
-          角色A（人物特征+服装描述）
+          [主体]角色：Jack（一位面容疲惫的40岁欧美男性，短发，穿着一件灰色旧毛衣），
+          角色B（人物特征+服装描述）
           ...（如有更多主要角色，继续添加）。
 
           [光照]：自然光照，柔和且均匀，微妙且真实的光影。
@@ -657,14 +656,13 @@ const generateStory = async () => {
           - 特定物品或道具描述：例如：手中的一叠美元钞票，一叠叠整齐的新衣服
           单帧视频提示词：必须使用中文生成基于单张图片的动态视频提示词，包含五个核心要素：核心画面描述+主体动态化+环境氛围化+镜头电影化+风格细节
           首尾帧视频提示词：必须使用中文生成基于首尾帧转换的视频提示词，描述从当前图片到下一个图片的动态过渡过程
-          字幕：英文对白或旁白
+          字幕：${form.value.language === 'chinese' ? '中文对白或旁白' : '英文对白或旁白'}
 
           **分镜2**
           分镜内容：用中文描述这个分镜的场景和动作
           图片提示词：[镜头类型]，[光线条件]，[时间]，在[场景描述]，背景是[背景细节描述]。
 
-          [主要角色描述1]（[人物特征]，[服装描述]）[动作描述]，[表情描述]。
-          [主要角色描述2]（[人物特征]，[服装描述]）[动作描述]，[表情描述]。
+          [主体]角色：角色C（人物特征+服装描述），
           ...（如有更多主要角色，继续添加）。
 
           [光照]：自然光照，柔和且均匀，微妙且真实的光影。
@@ -672,10 +670,10 @@ const generateStory = async () => {
           [画质]：画面高度细腻，细节极其丰富，达到照片级真实感。追求极致的清晰度和纹理表现，所有物体的材质质感都应逼真呈现。光影过渡自然平滑，色彩还原准确，无噪点，无失真，无数字感。8K分辨率视觉效果。
           单帧视频提示词：必须使用中文生成基于单张图片的动态视频提示词，包含五个核心要素：核心画面描述+主体动态化+环境氛围化+镜头电影化+风格细节
           首尾帧视频提示词：必须使用中文生成基于首尾帧转换的视频提示词，描述从当前图片到下一个图片的动态过渡过程
-          字幕：英文对白或旁白
+          字幕：${form.value.language === 'chinese' ? '中文对白或旁白' : '英文对白或旁白'}
 
           重要要求：
-          - 保持角色外观、服装、场景的一致性，每个分镜的角色不要有同上，同前等描述，要完整的角色描述
+          - 保持角色外观、服装、场景的一致性，全局每个角色都有一个固定名称，每个分镜的角色不要有同上，同前等描述，要完整的角色描述，不要使用代词，如他，她，它等，要使用固定的角色名称。
           - 每个角色必须包含详细的外观和服装描述
           - 图片提示词要遵循上述专业格式，包含镜头类型、光线氛围、人物状态、场景细节等
           - 模板特点：结构化描述，专业摄影风格，高质量要求，自然色彩，细节丰富
@@ -1171,10 +1169,15 @@ const checkVideoStatus = async (isPolling = false) => {
           showVideoResultDialog.value = true;
           videoLoading.value = false;
           // Save file
-          const now = new Date();
-          const filename = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}.mp4`;
-          await FileAPI.saveImage(form.value.ttv_story_type, filename, generatedVideoUrl.value);
-          ElMessage.info(`视频已保存到文件夹: ${form.value.ttv_story_type}`);
+          try {
+            const now = new Date();
+            const filename = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}.mp4`;
+            await FileAPI.saveImage(form.value.ttv_story_type, filename, generatedVideoUrl.value);
+            ElMessage.info(`视频已保存到文件夹: ${form.value.ttv_story_type}`);
+          } catch (saveErr) {
+            console.error('Failed to save video file:', saveErr);
+            ElMessage.warning(`视频已生成但保存失败: ${saveErr.message}`);
+          }
         } else {
           ElMessage.error('视频生成成功，但未获取到视频URL。');
           videoLoading.value = false;
@@ -1199,10 +1202,15 @@ const checkVideoStatus = async (isPolling = false) => {
             showVideoResultDialog.value = true;
             videoLoading.value = false;
             // Save file
-            const now = new Date();
-            const filename = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}.mp4`;
-            await FileAPI.saveImage(form.value.ttv_story_type, filename, generatedVideoUrl.value);
-            ElMessage.info(`视频已保存到文件夹: ${form.value.ttv_story_type}`);
+            try {
+              const now = new Date();
+              const filename = `${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}_${now.getHours().toString().padStart(2, '0')}${now.getMinutes().toString().padStart(2, '0')}${now.getSeconds().toString().padStart(2, '0')}.mp4`;
+              await FileAPI.saveImage(form.value.ttv_story_type, filename, generatedVideoUrl.value);
+              ElMessage.info(`视频已保存到文件夹: ${form.value.ttv_story_type}`);
+            } catch (saveErr) {
+              console.error('Failed to save video file:', saveErr);
+              ElMessage.warning(`视频已生成但保存失败: ${saveErr.message}`);
+            }
           }
         } else if (videoData.state === 'fail') {
           videoErrorMessage.value = videoData.failMsg;

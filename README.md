@@ -29,3 +29,10 @@ Simply double-click the `start.bat` file, or run it from your command prompt:
 ```bash
 .\start.bat
 ```
+
+⚠️ 一个重要的小提示
+  虽然代码修改（改 .js 或 .py 文件）通常会通过“挂载”（Volumes）直接生效，但如果你修改了 依赖文件（例如 package.json 加了新包，或者 backend/pyproject.toml
+  加了新库），docker-compose up 默认不会重新构建镜像来安装这些新包。
+
+  如果改了依赖，你需要手动强制重新构建一次：
+   1 docker-compose up --build
